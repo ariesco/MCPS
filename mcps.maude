@@ -1,0 +1,541 @@
+load full-maude.maude
+load aux.maude
+
+fmod MCPS-SIGNATURE is
+  inc FULL-MAUDE-SIGN .
+
+  sorts @MCPSCommand@ .
+
+  subsort @MCPSCommand@ < @Input@ .
+
+  *********************************************************************************
+  *** Introduces the memory sorts into the corresponding loop attribute         ***
+  *** Usage: (memory sorts SORT_1 ... SORT_n .)                                 ***
+  *********************************************************************************
+  op memory`sorts_. : @NeTokenList@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Introduces the unit sort into the corresponding loop attribute            ***
+  *** Usage: (unit SORT .)                                                      ***
+  *********************************************************************************
+  op unit_. : @Token@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Introduces the unit sort and the id into the corresponding loop attribute ***
+  *** The id is a natural number identifying the argument standing for the      ***
+  *** identifier of the unit                                                    ***
+  *** Usage: (unit SORT id NAT .)                                               ***
+  *********************************************************************************
+  op unit_id_. : @Token@ @Token@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Generated the JSON containing the transformed counterexample              ***
+  *** Usage: (shared memory analysis modelCheck(INIT, FORMULA) .)               ***
+  *********************************************************************************
+  op shared`memory`analysis_. : @Bubble@ -> @MCPSCommand@ [ctor] .
+endfm
+
+
+fmod META-MCPS-SIGN is
+ inc META-FULL-MAUDE-SIGN .
+
+ op MCPS-GRAMMAR : -> FModule [memo] .
+ eq MCPS-GRAMMAR = addImports((including 'MCPS-SIGNATURE .), GRAMMAR) .
+endfm
+
+fmod MCPS-COMMAND-PROCESSING is
+ pr COMMAND-PROCESSING .
+ pr EXT-BOOL .
+ pr PRINT .
+
+ sort SMAResult .
+ *** The first argument indicates whether the analysis succeedeed.
+ *** The second one contains either a JSON or an error message.
+ op [_,_] : Bool QidList -> SMAResult [ctor] .
+
+ vars QIL QIL' MBQIL MAQIL PQIL UQIL : QidList .
+ vars T T' T1 T2 T3 T4 P LHS : Term .
+ vars TL TL' TL'' PROPS : TermList .
+ var  ME : ModuleExpression .
+ vars QS QS' MS RL : QidSet .
+ var  R4T : Result4Tuple .
+ var  SB : Substitution .
+ vars TS TS' : TermSet .
+ var  COND : Condition .
+ var  RP : ResultPair .
+ var  CTXT : Context .
+ var  DB : Database .
+ var  AtS : AttrSet .
+ var  C : Constant .
+ var  V : Variable .
+ var  RS : RuleSet .
+ vars Q US : Qid .
+ var  M : Module .
+ var  Ty : Type .
+ var  S : Sort .
+ var  N : Nat .
+
+ **********************************************************************************
+ *** Processes the shared memory analysis command                               ***
+ **********************************************************************************
+ op processSMA : Term ModuleExpression QidSet Qid Nat Database -> SMAResult .
+ ceq processSMA(T, ME, QS, Q, N, DB) = processSMA(T, M, QS, Q, N)
+  if M := if compiledModule(ME, DB)
+          then getFlatModule(ME, DB)
+          else getFlatModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
+          fi .
+
+ op processSMA : Term Module QidSet Qid Nat -> SMAResult .
+ ceq processSMA(T, M, QS, Q, N) = processSMAParse(T', M, QS, Q, N, PROPS)
+  if RP := metaParse(M, downQidList(T), 'ModelCheckResult) /\
+     T' := getTerm(RP) /\
+     PROPS := getProps(M, T') .
+ eq processSMA(T, M, QS, Q, N) = [false, error-term-mc] [owise] .
+
+ op processSMAParse : Term Module QidSet Qid Nat TermList -> SMAResult .
+ ceq processSMAParse(T, M, QS, Q, N, PROPS) = if T' == 'true.Bool
+                                             then [false, error-no-counter]
+                                             else processSMARules(M, T', QS, Q, N, PROPS)
+                                             fi
+  if T' := getTerm(metaReduce(M, T)) .
+
+ op processSMARules : Module Term QidSet Qid Nat TermList -> SMAResult .
+ ceq processSMARules(M, T, QS, Q, N, PROPS) = [true, QIL]
+  if QS' := getMemoryRules(M, QS) /\
+     QIL := '`{ 'steps '= ' '`[ processCounterexample(M, T, QS', QS, Q, N, PROPS) '`] '`} .
+ eq processSMARules(M, T, QS, Q, N, PROPS) = [false, error-no-terms] [owise] .
+
+ op processCounterexample : Module Term QidSet QidSet Qid Nat TermList -> QidList .
+ ceq processCounterexample(M, 'counterexample[TL], RL, MS, US, N, PROPS) =
+                              $processCounterexample(M, TL'', RL, MS, US, N, PROPS)
+  if '__[TL'] := putTogether(TL) /\
+     TL'' := closeCounterexample(M, TL', RL) .
+
+ op $processCounterexample : Module TermList QidSet QidSet Qid Nat TermList -> QidList .
+ eq $processCounterexample(M, empty, RL, MS, US, N, PROPS) = nil .
+ ceq $processCounterexample(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), RL, MS,
+                            US, N, PROPS) =
+                    jsonStep(M, T1, T3, MS, US, N, Q, PROPS)
+                    if TL == empty
+                    then nil
+                    else '`,
+                         $processCounterexample(M, ('`{_`,_`}[T3, T4], TL), RL, MS, US,
+                                                N, PROPS)
+                    fi
+  if Q := downTerm(T2) /\
+     Q in RL .
+ eq $processCounterexample(M, (T, TL), RL, MS, US, N, PROPS) =
+                         $processCounterexample(M, TL, RL, MS, US, N, PROPS) [owise] .
+
+ op jsonStep : Module Term Term QidSet Sort Nat Qid TermList -> QidList .
+ ceq jsonStep(M, T, T', MS, S, N, Q, PROPS) =
+               '`{ '\n
+               UQIL
+               '\t 'memory-before  '= ' '`{     MBQIL     '`} '`, '\n
+               '\t 'memory-after ' '= ' '`{     MAQIL     '`} '`, '\n
+               '\t 'props        ' '= ' '`[ '\n PQIL  '\n '`]     '\n
+               '`} '\n
+  if TS    := getTermsOfSortQS(M, T, MS) /\
+     TS'   := getTermsOfSortQS(M, T', MS) /\
+     MBQIL := printMemory(M, TS) /\
+     MAQIL := printMemory(M, TS') /\
+     PQIL  := printProps(M, T, T', PROPS) /\
+     UQIL  := printUnit(M, T, T', S, N, Q) .
+
+ op printUnit : Module Term Term Sort Nat Qid -> QidList .
+ ceq printUnit(M, T1, T2, S, N, Q) = QIL QIL'
+  if {T, Ty, SB, CTXT} := findXapply(M, T1, Q, 0, T2) /\
+     LHS := getLHS(M, Q) /\
+     T' := applySb(getTermsOfSort(M, LHS, S), SB) /\
+     QIL := if N =/= 0
+            then '\t 'id '= ' metaPrettyPrint(M, getNth(T', N)) '`, '\n
+            else nil
+            fi /\
+     QIL' := '\t 'unit '= metaPrettyPrint(M, T') '`, '\n .
+
+ op findXapply : Module Term Qid Nat Term -> Result4Tuple .
+ ceq findXapply(M, T1, Q, N, T2) = R4T
+  if R4T := metaXapply(M, T1, Q, none, 0, unbounded, N) /\
+     T2 == getTerm(R4T) .
+
+ op applySb : Term Substitution -> Term .
+ eq applySb(V, (V <- T ; SB)) = T .
+ eq applySb(Q[TL], SB) = Q[applySb*(TL, SB)] .
+ eq applySb(T, SB) = T [owise] .
+
+ op applySb* : TermList Substitution -> TermList .
+ eq applySb*(empty, SB) = empty .
+ eq applySb*((T, TL), SB) = applySb(T, SB), applySb*(TL, SB) .
+
+ **********************************************************************************
+ *** Auxiliary function: getLHS                                                 ***
+ *** Returns the lefthand side of the rule identified by the given label.       ***
+ **********************************************************************************
+ op getLHS : Module Qid ~> Term .
+ ceq getLHS(M, Q) = T
+  if rl T => T' [AtS label(Q)] . RS := getRls(M) .
+ ceq getLHS(M, Q) = T
+  if crl T => T' if COND [AtS label(Q)] . RS := getRls(M) .
+
+ **********************************************************************************
+ *** Auxiliary function: getNth                                                 ***
+ *** Returns the nth argument of the term.                                      ***
+ **********************************************************************************
+ op getNth : Term Nat ~> Term .
+ eq getNth(Q[TL], N) = getNth*(TL, N) .
+
+ op getNth* : TermList Nat ~> Term .
+ eq getNth*((T, TL), 1) = T .
+ eq getNth*((T, TL), s(s(N))) = getNth*(TL, s(N)) .
+
+ **********************************************************************************
+ *** Auxiliary function: printProps                                             ***
+ *** Depicts the name, arguments, and value (before and after) of all atomic    ***
+ *** properties.                                                                ***
+ **********************************************************************************
+ op printProps : Module Term Term TermList -> QidList .
+ eq printProps(M, T, T', empty) = nil .
+ eq printProps(M, T, T', (P, PROPS)) =
+             printProp(M, T, T', P)
+             if PROPS == empty
+             then nil
+             else '`, '\n printProps(M, T, T', PROPS)
+             fi .
+
+ op printProp : Module Term Term Term -> QidList .
+ ceq printProp(M, T, T', P) = '\t '\t '`{ printPropNameArgs(M, P)
+                              '\t '\t 'prop '= QIL '-> QIL'
+                              '`}
+  if T1 := getTerm(metaReduce(M, '_|=_[T, P])) /\
+     T2 := getTerm(metaReduce(M, '_|=_[T', P])) /\
+     QIL := if T1 == 'true.Bool
+            then 'true
+            else 'false
+            fi /\
+     QIL' := if T2 == 'true.Bool
+             then 'true
+             else 'false
+             fi .
+
+ op printPropNameArgs : Module Term -> QidList .
+ eq printPropNameArgs(M, C) = 'name '= getName(C) '`, '\n
+                              '\t '\t 'args '= '`[ '`] '`, '\n .
+ eq printPropNameArgs(M, Q[TL]) = 'name '= Q '`, '\n
+                                  '\t '\t 'args '= '`[ printPropArgs(M, TL) '`] '`, '\n .
+
+ op printPropArgs : Module TermList -> QidList .
+ eq printPropArgs(M, empty) = nil .
+ ceq printPropArgs(M, (T, TL)) = QIL
+                                 if TL == empty
+                                 then nil
+                                 else '`, printPropArgs(M, TL)
+                                 fi
+  if QIL := metaPrettyPrint(M, T) .
+
+ **********************************************************************************
+ *** Auxiliary function: getProps                                               ***
+ *** Extracts the atomic formulas from the LTL formula.                         ***
+ **********************************************************************************
+
+ op getProps : Module Term -> TermList .
+ eq getProps(M, Q[T, T']) = $getProps(M, T') .
+
+ op $getProps : Module Term -> TermList .
+ ceq $getProps(M, T) = T
+  if getType(metaReduce(M, T)) == 'Prop .
+ ceq $getProps(M, Q[TL]) = $getProps*(M, TL)
+  if getType(metaReduce(M, Q[TL])) =/= 'Prop .
+ eq $getProps(M, T) = empty [owise] .
+
+ op $getProps* : Module TermList -> TermList .
+ eq $getProps*(M, empty) = empty .
+ eq $getProps*(M, (T, TL)) = $getProps(M, T),
+                             $getProps*(M, TL) .
+
+ **********************************************************************************
+ *** Auxiliary function: closeCounterexample                                    ***
+ *** It adds the final state generating the loop if the last rule is one of     ***
+ *** the rules of interest, so we can access the final state of the memory.     ***
+ **********************************************************************************
+ op closeCounterexample : Module TermList QidSet -> TermList .
+ ceq closeCounterexample(M, (TL, '`{_`,_`}[T1, T2]), RL) =
+                                $closeCounterexample(M, (TL, '`{_`,_`}[T1, T2]), T1, Q, 0)
+  if Q := downTerm(T2) /\
+     Q in RL .
+
+ op $closeCounterexample : Module TermList Term Qid Nat -> TermList .
+ ceq $closeCounterexample(M, TL, T, Q, N) = if closed(TL, T')
+                                            then (TL, '`{_`,_`}[T', ''#$foo.Qid])
+                                            else $closeCounterexample(M, TL, T, Q, s(N))
+                                            fi
+  if T' := getTerm(metaXapply(M, T, Q, none, 0, unbounded, N)) .
+ eq $closeCounterexample(M, TL, T, Q, N) = TL [owise] .
+
+ op closed : TermList Term -> Bool .
+ eq closed(empty, T) = false .
+ eq closed(('`{_`,_`}[T1, T2], TL), T) = T1 == T or-else closed(TL, T) .
+
+ **********************************************************************************
+ *** Auxiliary function: printMemory                                            ***
+ *** Prints the terms in the termset.                                           ***
+ **********************************************************************************
+
+ op printMemory : Module TermSet -> QidList .
+ eq printMemory(M, emptyTermSet) = nil .
+ eq printMemory(M, T | TS) = metaPrettyPrint(M, T)
+                             if TS == emptyTermSet
+                             then nil
+                             else '`, printMemory(M, TS)
+                             fi .
+
+ **********************************************************************************
+ *** Auxiliary function: getMemoryRules                                         ***
+ *** Given the current module and the set of sorts used for the memory          ***
+ *** it returns the set of rule labels that modifies terms of these sorts.      ***
+ **********************************************************************************
+ op getMemoryRules : Module QidSet -> QidSet .
+ eq getMemoryRules(M, QS) = getMemoryRules(M, getRls(M), QS) .
+
+ op getMemoryRules : Module RuleSet QidSet -> QidSet .
+ eq getMemoryRules(M, RS, Q ; QS) = getMemoryRules*(M, RS, Q) ;
+                                    getMemoryRules(M, RS, QS) .
+ eq getMemoryRules(M, RS, none) = none .
+
+ op getMemoryRules* : Module RuleSet Sort -> QidSet .
+ ceq getMemoryRules*(M, rl T => T' [label(Q) AtS] . RS, S) = Q
+  if TS := getTermsOfSort(M, T, S) /\
+     TS' := getTermsOfSort(M, T', S) /\
+     (TS minus TS') =/= emptyTermSet .
+ eq getMemoryRules*(M, RS, Q) = none [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: getTermsOfSortQS                                       ***
+ *** Returns a set of terms of the given sorts found in the given term.         ***
+ **********************************************************************************
+ op getTermsOfSortQS : Module Term QidSet -> TermSet .
+ eq getTermsOfSortQS(M, T, none) = emptyTermSet .
+ eq getTermsOfSortQS(M, T, Q ; QS) = getTermsOfSort(M, T, Q) |
+                                     getTermsOfSortQS(M, T, QS) .
+
+ **********************************************************************************
+ *** Auxiliary function: getTermsOfSort                                         ***
+ *** Returns a set of terms of the given sort found in the given term.          ***
+ **********************************************************************************
+ op getTermsOfSort : Module Term Sort -> TermSet .
+ ceq getTermsOfSort(M, T, S) = T
+  if Ty := getType(metaReduce(M, T)) /\
+     sameKind(M, Ty, S) /\
+     sortLeq(M, Ty, S) .
+ ceq getTermsOfSort(M, Q[TL], S) = getTermsOfSort*(M, TL, S)
+  if Ty := getType(metaReduce(M, Q[TL])) /\
+     (not sameKind(M, Ty, S)) or-else (not sortLeq(M, Ty, S)) .
+ eq getTermsOfSort(M, T, S) = emptyTermSet [owise] .
+
+ op getTermsOfSort* : Module TermList Sort -> TermSet .
+ eq getTermsOfSort*(M, empty, S) = emptyTermSet .
+ eq getTermsOfSort*(M, (T, TL), S) = getTermsOfSort(M, T, S) |
+                                     getTermsOfSort*(M, TL, S) .
+
+ **********************************************************************************
+ *** Auxiliary function: putTogether                                            ***
+ *** Given the current module and the set of sorts used for the memory          ***
+ *** it returns the set of rule labels that modifies terms of these sorts.      ***
+ **********************************************************************************
+
+ op putTogether : TermList ~> Term .
+ eq putTogether(T) = T .
+ eq putTogether(('__[TL], '__[TL'], TL'')) = putTogether(('__[TL, TL'], TL'')) .
+
+ **********************************************************************************
+ *** Auxiliary function: _minus_                                                ***
+ *** Removes the elements in the second set from the first one.                 ***
+ **********************************************************************************
+
+ op _minus_ : TermSet TermSet -> TermSet .
+ eq (T | TS) minus (T | TS') = TS minus TS' .
+ eq TS minus TS' = TS [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: _in_                                                   ***
+ *** Checks whether the term is in the set.                                     ***
+ **********************************************************************************
+
+ op _in_ : Term TermSet -> Bool .
+ eq T in (T | TS) = true .
+ eq T in TS = false [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: _in_                                                   ***
+ *** Checks whether the term is in the set.                                     ***
+ **********************************************************************************
+
+ op _in_ : Qid QidSet -> Bool .
+ eq Q in (Q ; QS) = true .
+ eq Q in QS = false [owise] .
+endfm
+
+mod MCPS is
+ pr MCPS-COMMAND-PROCESSING .
+ inc DATABASE-HANDLING .
+ inc META-MCPS-SIGN .
+
+ var  MCPSDC : MCPSDatabaseClass .
+ var  ME : ModuleExpression .
+ var  AtS : AttributeSet .
+ vars QS QS' : QidSet .
+ vars Q Q' Q'' : Qid .
+ var  DB : Database .
+ var  QIL : QidList .
+ vars T T' : Term .
+ var  S : String .
+ vars N N' : Nat .
+ var  B : Bool .
+ var  O : Oid .
+
+ sort MCPSDatabaseClass .
+ subsort MCPSDatabaseClass < DatabaseClass .
+
+ op MCPSDatabase : -> MCPSDatabaseClass [ctor] .
+
+
+ *********************************************************************************
+ *** New attributes for the loop                                               ***
+ ***                                                                           ***
+ *********************************************************************************
+ op memory :_ : QidSet -> Attribute [ctor] .
+ op unit :_ : Sort -> Attribute [ctor] .
+ op unit-id :_ : Nat -> Attribute [ctor] .
+
+ *********************************************************************************
+ *** Parsing rule for the sorts standing for the memory                        ***
+ *** The list of tokens is introduced, if the sort does not exist it is also   ***
+ *** inserted.                                                                 ***
+ *********************************************************************************
+ crl [memory-sorts] :
+     < O : MCPSDC | input : ('memory`sorts_.['neTokenList[T]]), output : nil,
+                    memory : QS, AtS >
+  => < O : MCPSDC | input : nilTermList, output : print-memory-sorts(QIL),
+                    memory : QS', AtS >
+  if QIL := downQidList(T) /\
+     QS' := list2set(QIL) .
+
+ crl [unit-sort] :
+     < O : MCPSDC | input : ('unit_.['token[T]]), output : nil, unit : Q, AtS >
+  => < O : MCPSDC | input : nilTermList, output : print-unit-sort(Q'), unit : Q', AtS >
+  if Q' := downQid(T) .
+
+ crl [unit-sort-error] :
+     < O : MCPSDC | input : ('unit_.['token[T]]), output : nil, AtS >
+  => < O : MCPSDC | input : nilTermList, output : comm-error-msg, AtS >
+  if not (downQid(T) :: Qid) .
+
+ crl [unit-sort-id] :
+     < O : MCPSDC | input : ('unit_id_.['token[T], 'token[T']]), output : nil,
+                    unit : Q, unit-id : N, AtS >
+  => < O : MCPSDC | input : nilTermList, output : print-unit-sort-id(Q', Q''),
+                    unit : Q', unit-id : N', AtS >
+  if Q' := downQid(T) /\
+     Q'' := downQid(T') /\
+     S := string(Q'') /\
+     N' := rat(S, 10) .
+
+ crl [unit-sort-id-error-sort] :
+     < O : MCPSDC | input : ('unit_id_.['token[T], 'token[T']]), output : nil, AtS >
+  => < O : MCPSDC | input : nilTermList, output : comm-error-msg, AtS >
+  if not (downQid(T) :: Qid) .
+
+ crl [unit-sort-id-error-arg1] :
+     < O : MCPSDC | input : ('unit_id_.['token[T], 'token[T']]), output : nil, AtS >
+  => < O : MCPSDC | input : nilTermList, output : comm-error-msg, AtS >
+  if not (downQid(T') :: Qid) .
+
+ crl [unit-sort-id-error-arg2] :
+     < O : MCPSDC | input : ('unit_id_.['token[T], 'token[T']]), output : nil, AtS >
+  => < O : MCPSDC | input : nilTermList, output : comm-error-msg, AtS >
+  if S := string(downQid(T')) /\
+     not (rat(S, 10) :: Nat) .
+
+ crl [shared-memory-analysis] :
+     < O : MCPSDC | db : DB, input : ('shared`memory`analysis_.['bubble[T]]), output : nil,
+                    default : ME, memory : QS, unit : Q', unit-id : N, AtS >
+  => < O : MCPSDC | db : DB, input : nilTermList, output : QIL, default : ME, memory : QS,
+                    unit : Q', unit-id : N, AtS >
+  if [B, QIL] := processSMA(T, ME, QS, Q', N, DB) .
+
+  ****************************************************************************************
+  ***                              Auxiliary functions                                 ***
+  ****************************************************************************************
+  op list2set : QidList -> QidSet .
+  eq list2set(nil) = none .
+  eq list2set(Q QIL) = Q ; list2set(QIL) .
+endm
+
+mod MCPS-INIT is
+ inc LOOP-MODE .
+ pr MCPS .
+
+ var  QI : Qid .
+ vars QIL QIL' QIL'' : QidList .
+ var  Atts : AttributeSet .
+ var  N : Nat .
+ var  DB : Database .
+ vars RP RP' : ResultPair .
+ var  O : Oid .
+ var  X@Database : DatabaseClass .
+
+ op o : -> Oid [ctor] .
+
+ --- State for LOOP mode:
+ subsort Object < State .
+ op init-mcps : -> System .
+
+ op init-state : -> AttributeSet .
+ eq init-state = db : initialDatabase, default : 'CONVERSION, memory : none,
+                 unit : 'Bool, unit-id : 0 .
+
+ rl [init] :
+    init-mcps
+ => [nil, < o : MCPSDatabase | input : nilTermList, output : nil, init-state >, mcps-banner] .
+
+ crl [in] :
+     [QIL, < O : X@Database | input : nilTermList, Atts >, QIL']
+  => [nil,
+      < O : X@Database | input : getTerm(metaParse(MCPS-GRAMMAR, QIL, '@Input@)), Atts >,
+      QIL']
+  if QIL =/= nil /\
+     metaParse(MCPS-GRAMMAR, QIL, '@Input@) : ResultPair .
+
+ crl [in] :
+     [QIL, < O : X@Database | output : nil, Atts >, QIL']
+  => [nil,
+      < O : X@Database | output : ('\r 'Warning: '\o
+                printSyntaxError(metaParse(MCPS-GRAMMAR, QIL, '@Input@), QIL)
+                '\n
+                '\r 'Error: '\o 'No 'parse 'for 'input. '\n), Atts >,
+      QIL']
+  if QIL =/= nil /\
+     noParse(N) := metaParse(MCPS-GRAMMAR, QIL, '@Input@)  .
+
+ crl [in] :
+     [QIL, < O : X@Database | output : nil, Atts >, QIL']
+  => [nil,
+      < O : X@Database | output :  ('\r 'Error: '\o 'Ambiguous 'input. '\n), Atts >,
+      QIL']
+   if QIL =/= nil /\
+      ambiguity(RP, RP') := metaParse(MCPS-GRAMMAR, QIL, '@Input@)  .
+
+ rl [out] :
+    [QIL, < O : X@Database | output : (QI QIL'), Atts >, QIL'']
+ => [QIL, < O : X@Database | output : nil, Atts >, (QIL'' QI QIL')] .
+endm
+
+set print conceal on .
+print conceal mod_is_sorts_._____endm .
+print conceal fmod_is_sorts_.____endfm .
+print conceal db .
+
+*** for debugging purposes
+set print attribute on .
+
+loop init-mcps .
+

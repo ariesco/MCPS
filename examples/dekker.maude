@@ -1,0 +1,172 @@
+  ---- modified from the book All About Maude
+  ---- by the Maude team
+  load model-checker.maude
+
+  select MCPS-INIT .
+
+  loop init-mcps .
+
+  (fmod MEMORY is
+    protecting INT .
+    protecting QID .
+    sort Memory .
+    op none : -> Memory [ctor] .
+    op __ : Memory Memory -> Memory [ctor assoc comm id: none] .
+    op `[_`,_`] : Qid Int -> Memory [ctor] .
+  endfm)
+
+  (fmod TESTS is
+    protecting MEMORY .
+    sort Test .
+    op _=_ : Qid Int -> Test [ctor] .
+    op eval : Test Memory ~> Bool .
+
+    var  Q : Qid .
+    var  M : Memory .
+    vars N N' : Int .
+    eq eval(Q = N, [Q, N'] M) = N == N' .
+  endfm)
+
+  (fmod SEQUENTIAL is
+    protecting TESTS .
+    sorts UserStatement LoopingUserStatement Program .
+    subsort LoopingUserStatement < UserStatement < Program .
+    op skip : -> Program [ctor] .
+    op _;_ : Program Program -> Program [ctor prec 61 assoc id: skip] .
+    op _:=_ : Qid Int -> Program [ctor] .
+    op if_then_fi : Test Program -> Program [ctor] .
+    op while_do_od : Test Program -> Program [ctor] .
+    op repeat_forever : Program -> Program [ctor] .
+  endfm)
+
+  (mod PARALLEL is
+    protecting SEQUENTIAL .
+    sorts Pid Process Soup MachineState .
+    subsort Process < Soup .
+    op `[_`,_`] : Pid Program -> Process [ctor] .
+    op empty : -> Soup [ctor] .
+    op _|_ : Soup Soup -> Soup [ctor prec 61 assoc comm id: empty] .
+    op `{_`,_`,_`} : Soup Memory Pid -> MachineState [ctor] .
+
+    var  L : LoopingUserStatement .
+    var  U : UserStatement .
+    vars P R : Program .
+    var  M : Memory .
+    vars I J : Pid .
+    vars N X : Int .
+    var  S : Soup .
+    var  T : Test .
+    var  Q : Qid .
+
+    rl [user] :
+       {[I, U ; R] | S, M, J}
+    => {[I, R] | S, M, I} .
+
+    rl [loop-user] :
+       {[I, L ; R] | S, M, J}
+    => {[I, L ; R] | S, M, I} .
+
+    rl [asg] :
+       {[I, (Q := N) ; R] | S, [Q, X] M, J}
+    => {[I, R] | S, [Q, N] M, I} .
+
+    rl [if] :
+       {[I, if T then P fi ; R] | S, M, J}
+    => {[I, if eval(T, M) then P else skip fi ; R] | S, M, I} .
+
+    rl [while] :
+       {[I, while T do P od ; R] | S, M, J}
+    => {[I, if eval(T, M)
+            then (P ; while T do P od)
+            else skip fi ; R] | S, M, I} .
+
+    rl [repeat] :
+       {[I, repeat P forever ; R] | S, M, J}
+    => {[I, P ; repeat P forever ; R] | S, M, I} .
+  endm)
+
+  (mod DEKKER is
+    extending PARALLEL .
+    subsort Int < Pid .
+    op crit : -> UserStatement .
+    ops p1 p2 : -> Program .
+    op initialMem : -> Memory .
+    op initial : -> MachineState .
+
+    eq p1
+      = repeat
+          'c1 := 1 ;
+          while 'c2 = 1 do
+            if 'turn = 2 then
+              'c1 := 0 ;
+              while 'turn = 2 do skip od ;
+              'c1 := 1
+            fi
+          od ;
+          *** Critical section
+          'cs1 := 1 ;
+          *** end critical section
+          'cs1 := 0 ;
+          'turn := 2 ;
+          'c1 := 0
+        forever .
+
+    eq p2
+      = repeat
+          *** It should be 'c2 := 1 ;
+          'c1 := 1 ;
+          while 'c1 = 1 do
+            if 'turn = 1 then
+              'c2 := 0 ;
+              while 'turn = 1 do skip od ;
+              'c2 := 1
+            fi
+          od ;
+          *** Critical section
+          'cs2 := 1 ;
+          *** end critical section
+          'cs2 := 0 ;
+          'turn := 1 ;
+          'c2 := 0
+        forever .
+
+    eq initialMem = ['c1, 0] ['c2, 0] ['turn, 1] ['cs1, 0] ['cs2, 0] .
+    eq initial = { [1, p1] | [2, p2], initialMem, 0 } .
+  endm)
+
+  (mod DEKKER-CHECK is
+    protecting DEKKER .
+    including MODEL-CHECKER .
+    including LTL-SIMPLIFIER .
+
+    subsort MachineState < State .
+
+    var  M : Memory .
+    var  R : Program .
+    var  S : Soup .
+    vars I J : Pid .
+    var  Q : Qid .
+
+    op exec : Pid -> Prop [ctor] .
+    eq {S, M [Q, 1], J} |= enterCrit(Q) = true .
+
+    op enterCrit : Qid -> Prop [ctor] .
+    eq {S, M, J} |= exec(J) = true .
+  endm)
+
+(red modelCheck(initial, []~ (enterCrit('cs1) /\ enterCrit('cs2))) .)
+
+(memory sorts Memory .)
+
+(unit Process id 1 .)
+
+(shared memory analysis modelCheck(initial, []~ (enterCrit('cs1) /\ enterCrit('cs2))) .)
+
+eof
+
+red modelCheck(initial, []<> exec(1) -> []<> enterCrit(1)) .
+
+red modelCheck(initial, []<> exec(2) -> []<> enterCrit(2)) .
+
+
+

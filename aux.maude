@@ -1,0 +1,35 @@
+fmod PRINT is
+ pr META-LEVEL .
+
+ var  QIL : QidList .
+ var  M : Module .
+ vars Q Q' : Qid .
+ var  T : Term .
+
+ op printOpts : -> PrintOptionSet .
+ eq printOpts = mixfix number rat format .
+
+ op metaPrettyPrint : Module Term ~> QidList .
+ eq metaPrettyPrint(M, T) = metaPrettyPrint(M, T, printOpts) .
+
+ op mcps-banner : -> QidList .
+ eq mcps-banner = '\n '\t 'MCPS '1.0: 'Model 'checking 'parameterized 'by 'the 'semantics
+                  '\n '\t ' ' ' '\t '\t '`( 'August '15th '`, '\s '2017 '`) '\n .
+
+ op print-memory-sorts : QidList -> QidList .
+ eq print-memory-sorts(QIL) = '\n '\b '\! 'Memory 'sorts 'introduced: '\o QIL '\n .
+
+ op print-unit-sort : Qid -> QidList .
+ eq print-unit-sort(Q) = '\n '\b '\! 'Unit 'sort 'introduced: '\o Q '\n .
+
+ op print-unit-sort-id : Qid Qid -> QidList .
+ eq print-unit-sort-id(Q, Q') = '\n '\b '\! 'Unit 'sort 'introduced: '\o Q '\n
+                                '\n '\b '\! 'It 'is 'identified 'by 'the '\o Q' '\b
+                                '\! 'argument. '\o '\n .
+
+ ops comm-error-msg error-term-mc error-no-counter error-no-terms : -> QidList .
+ eq comm-error-msg = '\! '\r 'Error: 'erroneous 'syntax 'in 'command. '\o '\n .
+ eq error-term-mc = '\! '\r 'Error: 'wrong 'model 'check 'command. '\o '\n .
+ eq error-no-counter = '\! '\r 'Error: 'no 'counterexample 'generated. '\o '\n .
+ eq error-no-terms = '\! '\r 'Error: 'no 'rules 'modifying 'the 'given 'sorts. '\o '\n .
+endfm
