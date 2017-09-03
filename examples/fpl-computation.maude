@@ -342,12 +342,22 @@ mod COMPUTATION is
 
   op _,_|=_ : Dec ENV Exp -> Statement [prec 40] .
 
-  rl  [zero] : D,ro |= v => v .   *** no step
+  rl  [zero] : D,ro |= v => v .  *** no step
   crl [more] : D,ro |= e => v
             if D,ro |- e => e'   *** one step
             /\ D,ro |= e' => v . *** all the rest
 
 endm
+
+fmod PROCESS is
+ pr COMPUTATION .
+
+ sort Process .
+
+ op [_|_,_|_] : Qid Env Exp ExpList -> Process [ctor] .
+
+*** Dec
+endfm
 
 eof .
 
