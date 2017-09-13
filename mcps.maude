@@ -29,10 +29,40 @@ fmod MCPS-SIGNATURE is
   op unit_id_. : @Token@ @Token@ -> @MCPSCommand@ [ctor] .
 
   *********************************************************************************
-  *** Generated the JSON containing the transformed counterexample              ***
+  *** Generates the JSON containing the transformed counterexample              ***
   *** Usage: (shared memory analysis modelCheck(INIT, FORMULA) .)               ***
   *********************************************************************************
   op shared`memory`analysis_. : @Bubble@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Generates the JSON containing the transformed counterexample              ***
+  *** Usage: (msg passing analysis modelCheck(INIT, FORMULA) .)                 ***
+  *********************************************************************************
+  op msg`passing`analysis_. : @Bubble@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Introduces the operators in charge of creating messages.                  ***
+  *** Usage: (msg creation OP_1 ... OP_n .)                                     ***
+  *********************************************************************************
+  op msg`creation_. : @NeTokenList@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Introduces the operators in charge of consuming messages.                 ***
+  *** Usage: (msg consumption OP_1 ... OP_n .)                                  ***
+  *********************************************************************************
+  op msg`consumption_. : @NeTokenList@ -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Sets "process" as the current mode.                                       ***
+  *** Usage: (set mode process .)                                               ***
+  *********************************************************************************
+  op set`mode`process`. : -> @MCPSCommand@ [ctor] .
+
+  *********************************************************************************
+  *** Sets "trace" as the current mode.                                         ***
+  *** Usage: (set mode trace .)                                               ***
+  *********************************************************************************
+  op set`mode`trace`. : -> @MCPSCommand@ [ctor] .
 endfm
 
 
@@ -47,17 +77,18 @@ fmod MCPS-COMMAND-PROCESSING is
  pr COMMAND-PROCESSING .
  pr EXT-BOOL .
  pr PRINT .
+ pr MODE .
 
- sort SMAResult .
+ sort AnalysisResult .
  *** The first argument indicates whether the analysis succeedeed.
  *** The second one contains either a JSON or an error message.
- op [_,_] : Bool QidList -> SMAResult [ctor] .
+ op [_,_] : Bool QidList -> AnalysisResult [ctor] .
 
  vars QIL QIL' MBQIL MAQIL PQIL UQIL : QidList .
  vars T T' T1 T2 T3 T4 P LHS : Term .
  vars TL TL' TL'' PROPS : TermList .
+ vars QS QS' MS RL RC RD : QidSet .
  var  ME : ModuleExpression .
- vars QS QS' MS RL : QidSet .
  var  R4T : Result4Tuple .
  var  SB : Substitution .
  vars TS TS' : TermSet .
@@ -65,41 +96,46 @@ fmod MCPS-COMMAND-PROCESSING is
  var  RP : ResultPair .
  var  CTXT : Context .
  var  DB : Database .
+ vars Q US Q' : Qid .
  var  AtS : AttrSet .
  var  C : Constant .
  var  V : Variable .
  var  RS : RuleSet .
- vars Q US : Qid .
+ var  MODE : Mode .
  var  M : Module .
+ vars N N' : Nat .
  var  Ty : Type .
  var  S : Sort .
- var  N : Nat .
 
  **********************************************************************************
- *** Processes the shared memory analysis command                               ***
+ ***                                                                            ***
+ ***                           MAIN FUNCTION: processSMA                        ***
+ ***                                                                            ***
+ ***                Processes the shared memory analysis command                ***
+ ***                                                                            ***
  **********************************************************************************
- op processSMA : Term ModuleExpression QidSet Qid Nat Database -> SMAResult .
+ op processSMA : Term ModuleExpression QidSet Qid Nat Database -> AnalysisResult .
  ceq processSMA(T, ME, QS, Q, N, DB) = processSMA(T, M, QS, Q, N)
   if M := if compiledModule(ME, DB)
           then getFlatModule(ME, DB)
           else getFlatModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
           fi .
 
- op processSMA : Term Module QidSet Qid Nat -> SMAResult .
+ op processSMA : Term Module QidSet Qid Nat -> AnalysisResult .
  ceq processSMA(T, M, QS, Q, N) = processSMAParse(T', M, QS, Q, N, PROPS)
   if RP := metaParse(M, downQidList(T), 'ModelCheckResult) /\
      T' := getTerm(RP) /\
      PROPS := getProps(M, T') .
  eq processSMA(T, M, QS, Q, N) = [false, error-term-mc] [owise] .
 
- op processSMAParse : Term Module QidSet Qid Nat TermList -> SMAResult .
+ op processSMAParse : Term Module QidSet Qid Nat TermList -> AnalysisResult .
  ceq processSMAParse(T, M, QS, Q, N, PROPS) = if T' == 'true.Bool
                                              then [false, error-no-counter]
                                              else processSMARules(M, T', QS, Q, N, PROPS)
                                              fi
   if T' := getTerm(metaReduce(M, T)) .
 
- op processSMARules : Module Term QidSet Qid Nat TermList -> SMAResult .
+ op processSMARules : Module Term QidSet Qid Nat TermList -> AnalysisResult .
  ceq processSMARules(M, T, QS, Q, N, PROPS) = [true, QIL]
   if QS' := getMemoryRules(M, QS) /\
      QIL := '`{ 'steps '= ' '`[ processCounterexample(M, T, QS', QS, Q, N, PROPS) '`] '`} .
@@ -157,6 +193,111 @@ fmod MCPS-COMMAND-PROCESSING is
  ceq findXapply(M, T1, Q, N, T2) = R4T
   if R4T := metaXapply(M, T1, Q, none, 0, unbounded, N) /\
      T2 == getTerm(R4T) .
+
+ **********************************************************************************
+ ***                                                                            ***
+ ***                           MAIN FUNCTION: processMPA                        ***
+ ***                                                                            ***
+ ***               Processes the message passing analysis command               ***
+ ***                                                                            ***
+ **********************************************************************************
+
+ *** Term    Default module   Msg creation   Msg consumption   Unit   Id   Mode   Database
+ op processMPA : Term ModuleExpression QidSet QidSet Qid Nat Mode Database
+                 -> AnalysisResult .
+ ceq processMPA(T, ME, QS, QS', Q, N, MODE, DB) = processMPA(T, M, QS, QS', Q, N, MODE)
+  if M := if compiledModule(ME, DB)
+          then getFlatModule(ME, DB)
+          else getFlatModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
+          fi .
+
+ op processMPA : Term Module QidSet QidSet Qid Nat Mode -> AnalysisResult .
+ ceq processMPA(T, M, QS, QS', Q, N, MODE) =
+                                      processMPAParse(T', M, QS, QS', Q, N, MODE, PROPS)
+  if RP := metaParse(M, downQidList(T), 'ModelCheckResult) /\
+     T' := getTerm(RP) /\
+     PROPS := getProps(M, T') .
+ eq processMPA(T, M, QS, QS', Q, N, MODE) = [false, error-term-mc] [owise] .
+
+ op processMPAParse : Term Module QidSet QidSet Qid Nat Mode TermList -> AnalysisResult .
+ ceq processMPAParse(T, M, QS, QS', Q, N, MODE, PROPS) =
+                                 if T' == 'true.Bool
+                                 then [false, error-no-counter]
+                                 else processMPARules(M, T', QS, QS', Q, N, MODE, PROPS)
+                                 fi
+  if T' := getTerm(metaReduce(M, T)) .
+
+ op processMPARules : Module Term QidSet QidSet Qid Nat Mode TermList -> AnalysisResult .
+ ceq processMPARules(M, T, QS, QS', Q, N, MODE, PROPS) =
+                               processMPAMode(M, T, QS, QS', Q, N, MODE, PROPS, RC, RD)
+  if RC := getRulesUsing(M, QS) /\
+     RD := getRulesUsing(M, QS') .
+
+ op processMPAMode : Module Term QidSet QidSet Qid Nat Mode TermList QidSet QidSet ->
+                     AnalysisResult .
+ eq processMPAMode(M, T, QS, QS', Q, N, process, PROPS, RC, RD) = [true, 'Hola] .
+
+ sort ProcessInfo CompInfo .
+ subsort ProcessInfo < CompInfo .
+ *** Id
+ *** Final value
+ *** Msgs sent
+ *** Msgs received
+ op [_,_,_,_] : Term Term TermList TermList -> ProcessInfo [ctor] .
+ op noInfo : -> CompInfo [ctor] .
+ op __ : CompInfo CompInfo -> CompInfo [ctor assoc comm id: noInfo] .
+
+ **********************************************************************************
+ *** Auxiliary function: getRulesUsing                                          ***
+ *** Returns the set of rule labels in charge of sending messages.              ***
+ **********************************************************************************
+ op getRulesUsing : Module QidSet -> QidSet .
+ eq getRulesUsing(M, QS) = getRulesUsing(getRls(M), QS) .
+
+ op getRulesUsing : RuleSet QidSet -> QidSet .
+ ceq getRulesUsing(rl T => T' [label(Q) AtS] . RS, QS) = Q ; getRulesUsing(RS, QS)
+  if N := | getTermsTopOps(T, QS) | /\
+     N' := | getTermsTopOps(T', QS) | /\
+     N > N' .
+ eq getRulesUsing(RS, QS) = none [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: |_|                                                    ***
+ *** Computes the size of the list.                                             ***
+ **********************************************************************************
+
+ op |_| : TermList -> Nat .
+ eq | (empty).TermList | = 0 .
+ eq | (T, TL) | = s(| TL |) .
+
+ **********************************************************************************
+ *** Auxiliary function: getTermsTopOp                                          ***
+ *** Returns all the terms with this Qid as top operator.                       ***
+ **********************************************************************************
+
+ op getTermsTopOps : Term QidSet -> TermList .
+ eq getTermsTopOps(T, none) = empty .
+ eq getTermsTopOps(T, Q ; QS) = getTermsTopOp(T, Q), getTermsTopOps(T, QS) .
+
+ op getTermsTopOp : Term Qid -> TermList .
+ eq getTermsTopOp(V, Q) = empty .
+ eq getTermsTopOp(C, Q) = if getName(C) == Q
+                          then C
+                          else empty
+                          fi .
+ eq getTermsTopOp(Q[TL], Q') = if Q == Q'
+                               then Q[TL]
+                               else getTermsTopOp*(TL, Q')
+                               fi .
+
+ op getTermsTopOp* : TermList Qid -> TermList .
+ eq getTermsTopOp*(empty, Q) = empty .
+ eq getTermsTopOp*((T, TL), Q) = getTermsTopOp(T, Q), getTermsTopOp*(TL, Q) .
+
+ **********************************************************************************
+ *** Auxiliary function: applySb                                                ***
+ *** Applies a substitution to the given term.                                  ***
+ **********************************************************************************
 
  op applySb : Term Substitution -> Term .
  eq applySb(V, (V <- T ; SB)) = T .
@@ -389,6 +530,7 @@ mod MCPS is
  vars T T' : Term .
  var  S : String .
  vars N N' : Nat .
+ var  M : Mode .
  var  B : Bool .
  var  O : Oid .
 
@@ -405,11 +547,33 @@ mod MCPS is
  op memory :_ : QidSet -> Attribute [ctor] .
  op unit :_ : Sort -> Attribute [ctor] .
  op unit-id :_ : Nat -> Attribute [ctor] .
+ op msg-creation :_ : QidSet -> Attribute [ctor] .
+ op msg-consumption :_ : QidSet -> Attribute [ctor] .
+ op mode :_ : Mode -> Attribute [ctor] .
 
  *********************************************************************************
- *** Parsing rule for the sorts standing for the memory                        ***
- *** The list of tokens is introduced, if the sort does not exist it is also   ***
- *** inserted.                                                                 ***
+ *** Rule for setting the current mode to "process" for message-passing        ***
+ *** semantics.                                                                ***
+ *********************************************************************************
+ rl [mode-process] :
+    < O : MCPSDC | input : ('set`mode`process`..@MCPSCommand@), output : nil,
+                   mode : M, AtS >
+ => < O : MCPSDC | input : nilTermList, output : print-mode(process),
+                   mode : process, AtS >  .
+
+ *********************************************************************************
+ *** Rule for setting the current mode to "trace" for message-passing          ***
+ *** semantics.                                                                ***
+ *********************************************************************************
+ rl [mode-trace] :
+    < O : MCPSDC | input : ('set`mode`trace`..@MCPSCommand@), output : nil,
+                   mode : M, AtS >
+ => < O : MCPSDC | input : nilTermList, output : print-mode(trace),
+                   mode : trace, AtS >  .
+
+ *********************************************************************************
+ *** Parsing rule for the sorts standing for the memory.                       ***
+ *** The list of tokens is introduced in the corresponding attribute.          ***                                                                 ***
  *********************************************************************************
  crl [memory-sorts] :
      < O : MCPSDC | input : ('memory`sorts_.['neTokenList[T]]), output : nil,
@@ -419,6 +583,35 @@ mod MCPS is
   if QIL := downQidList(T) /\
      QS' := list2set(QIL) .
 
+ *********************************************************************************
+ *** Parsing rule for the operators creating messages.                         ***
+ *** The list of tokens is introduced in the corresponding attribute.          ***                                                                 ***
+ *********************************************************************************
+ crl [msg-creation-ops] :
+     < O : MCPSDC | input : ('msg`creation_.['neTokenList[T]]), output : nil,
+                    msg-creation : QS, AtS >
+  => < O : MCPSDC | input : nilTermList, output : print-msg-creation(QIL),
+                    msg-creation : QS', AtS >
+  if QIL := downQidList(T) /\
+     QS' := list2set(QIL) .
+
+ *********************************************************************************
+ *** Parsing rule for the operators consuming messages.                        ***
+ *** The list of tokens is introduced in the corresponding attribute.          ***                                                                 ***
+ *********************************************************************************
+ crl [msg-creation-ops] :
+     < O : MCPSDC | input : ('msg`consumption_.['neTokenList[T]]), output : nil,
+                    msg-consumption : QS, AtS >
+  => < O : MCPSDC | input : nilTermList, output : print-msg-consumption(QIL),
+                    msg-consumption : QS', AtS >
+  if QIL := downQidList(T) /\
+     QS' := list2set(QIL) .
+
+ *********************************************************************************
+ *** Parsing rule for the operator standing for the unit.                      ***
+ *** It does not indicate the argument identifying the unit, so it can only    ***
+ *** fail if it cannot be parsed as a Qid.                                     ***
+ *********************************************************************************
  crl [unit-sort] :
      < O : MCPSDC | input : ('unit_.['token[T]]), output : nil, unit : Q, AtS >
   => < O : MCPSDC | input : nilTermList, output : print-unit-sort(Q'), unit : Q', AtS >
@@ -429,6 +622,12 @@ mod MCPS is
   => < O : MCPSDC | input : nilTermList, output : comm-error-msg, AtS >
   if not (downQid(T) :: Qid) .
 
+ *********************************************************************************
+ *** Parsing rule for the operator standing for the unit.                      ***
+ *** It indicates the argument identifying the unit, so it can fail if it      ***
+ *** the first argument cannot be parsed as a Qid or the second one does not   ***
+ *** stand for a natural number.                                               ***
+ *********************************************************************************
  crl [unit-sort-id] :
      < O : MCPSDC | input : ('unit_id_.['token[T], 'token[T']]), output : nil,
                     unit : Q, unit-id : N, AtS >
@@ -455,12 +654,29 @@ mod MCPS is
   if S := string(downQid(T')) /\
      not (rat(S, 10) :: Nat) .
 
+ *********************************************************************************
+ *** Parsing rule for the transformation for shared memory.                    ***
+ *** It prints the results given by the function above.                        ***
+ *********************************************************************************
  crl [shared-memory-analysis] :
      < O : MCPSDC | db : DB, input : ('shared`memory`analysis_.['bubble[T]]), output : nil,
                     default : ME, memory : QS, unit : Q', unit-id : N, AtS >
   => < O : MCPSDC | db : DB, input : nilTermList, output : QIL, default : ME, memory : QS,
                     unit : Q', unit-id : N, AtS >
   if [B, QIL] := processSMA(T, ME, QS, Q', N, DB) .
+
+ *********************************************************************************
+ *** Parsing rule for the transformation for shared memory.                    ***
+ *** It prints the results given by the function above.                        ***
+ *********************************************************************************
+ crl [shared-memory-analysis] :
+     < O : MCPSDC | db : DB, input : ('msg`passing`analysis_.['bubble[T]]), output : nil,
+                    default : ME, msg-creation : QS, msg-consumption : QS', unit : Q',
+                    unit-id : N, mode : M, AtS >
+  => < O : MCPSDC | db : DB, input : nilTermList, output : QIL, default : ME,
+                    msg-creation : QS, msg-consumption : QS', unit : Q', unit-id : N,
+                    mode : M, AtS >
+  if [B, QIL] := processMPA(T, ME, QS, QS', Q', N, M, DB) .
 
   ****************************************************************************************
   ***                              Auxiliary functions                                 ***
@@ -491,7 +707,8 @@ mod MCPS-INIT is
 
  op init-state : -> AttributeSet .
  eq init-state = db : initialDatabase, default : 'CONVERSION, memory : none,
-                 unit : 'Bool, unit-id : 0 .
+                 unit : 'Bool, unit-id : 0, msg-creation : none, msg-consumption : none,
+                 mode : process .
 
  rl [init] :
     init-mcps

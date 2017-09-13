@@ -1,5 +1,12 @@
+fmod MODE is
+ sort Mode .
+
+ ops process trace : -> Mode [ctor] .
+endfm
+
 fmod PRINT is
  pr META-LEVEL .
+ pr MODE .
 
  var  QIL : QidList .
  var  M : Module .
@@ -19,6 +26,14 @@ fmod PRINT is
  op print-memory-sorts : QidList -> QidList .
  eq print-memory-sorts(QIL) = '\n '\b '\! 'Memory 'sorts 'introduced: '\o QIL '\n .
 
+ op print-msg-creation : QidList -> QidList .
+ eq print-msg-creation(QIL) = '\n '\b '\! 'Message 'creation 'operators 'introduced:
+                              '\o QIL '\n .
+
+ op print-msg-consumption : QidList -> QidList .
+ eq print-msg-consumption(QIL) = '\n '\b '\! 'Message 'consumption 'operators 'introduced:
+                              '\o QIL '\n .
+
  op print-unit-sort : Qid -> QidList .
  eq print-unit-sort(Q) = '\n '\b '\! 'Unit 'sort 'introduced: '\o Q '\n .
 
@@ -26,6 +41,10 @@ fmod PRINT is
  eq print-unit-sort-id(Q, Q') = '\n '\b '\! 'Unit 'sort 'introduced: '\o Q '\n
                                 '\n '\b '\! 'It 'is 'identified 'by 'the '\o Q' '\b
                                 '\! 'argument. '\o '\n .
+
+ op print-mode : Mode -> QidList .
+ eq print-mode(process) = '\n '\b '\! 'Mode '\o 'process '\b '\! 'selected. '\o '\n .
+ eq print-mode(trace) = '\n '\b '\! 'Mode '\o 'trace '\b '\! 'selected. '\o '\n .
 
  ops comm-error-msg error-term-mc error-no-counter error-no-terms : -> QidList .
  eq comm-error-msg = '\! '\r 'Error: 'erroneous 'syntax 'in 'command. '\o '\n .

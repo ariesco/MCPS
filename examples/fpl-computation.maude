@@ -3,6 +3,9 @@ fmod SYNTAX is
 
   sorts Var Num Op Exp BVar Boolean BOp BExp FunVar VarList NumList ExpList Prog Dec .
 
+  *** Preregularity check
+  subsort Boolean < Num .
+
 ***  subsort Qid < Var .
   op V : Qid -> Var .
   subsort Var < Exp .
@@ -29,7 +32,7 @@ fmod SYNTAX is
   op If_Then_Else_ : BExp Exp Exp -> Exp [ctor prec 25] .
   op _`(_`) : FunVar ExpList -> Exp [ctor prec 15] .
   *** Msg
-  op to_:_ : Qid Exp -> Exp [ctor prec 10] .
+  op to_:_ : Exp Exp -> Exp [ctor prec 10] .
   *** Receive
   op receive : -> Exp [ctor] .
 
@@ -45,8 +48,8 @@ fmod SYNTAX is
   subsort VarList < ExpList .
 
   subsort Num < NumList .
-  op nilNL : -> NumList .
-  op _,_ : NumList NumList -> NumList [assoc prec 30] .
+  op nilNL : -> NumList [ctor] .
+  op _,_ : NumList NumList -> NumList [ctor assoc prec 30] .
   subsort NumList < ExpList .
 
   op <_,_> : Exp Dec -> Prog .
@@ -110,9 +113,9 @@ fmod ENV is
 
   sort ENV .
 
-  op mt : -> ENV .
-  op _=_ : Variable Value -> ENV [prec 20] .
-  op __ : ENV ENV -> ENV [assoc id: mt prec 30] .
+  op mt : -> ENV [ctor] .
+  op _=_ : Variable Value -> ENV [ctor prec 20] .
+  op __ : ENV ENV -> ENV [ctor assoc id: mt prec 30] .
   op _`(_`) : ENV Var -> Num .
   op _`(_`) : ENV BVar -> Boolean .
   op _`[_/_`] : ENV Value Variable -> ENV [prec 35] .
@@ -148,8 +151,8 @@ fmod SUBSTITUTION is
   eq x U x = x . *** idempotency
 
   *** FVar returns the free Var (not BVar)
-  op FVar : Exp -> VarSet .
-  op FVar : BExp -> VarSet .
+  op FVarE : Exp -> VarSet .
+  op FVarB : BExp -> VarSet .
   op FVar : ExpList -> VarSet .
 
   op _in_ : Var VarSet -> Bool .
@@ -160,7 +163,7 @@ fmod SUBSTITUTION is
 
   var n : Num .
   vars x y x' : Var .
-  vars e e' e1 e2 : Exp .
+  vars e e' e'' e1 e2 : Exp .
   var op : Op .
   var F : FunVar .
   var bx : BVar .
@@ -171,20 +174,24 @@ fmod SUBSTITUTION is
   var N : Nat .
   var xl : VarList .
 
-  eq FVar(n) = mt .
-  eq FVar(x) = x .
-  eq FVar(e1 op e2) = FVar(e1) U FVar(e2) .
-  eq FVar(If be Then e1 Else e2) = FVar(be) U FVar(e1) U FVar(e2) .
-  eq FVar(let x = e in e') = (FVar(e') \ x) U FVar(e) .
-  eq FVar(F(el)) = FVar(el) .
+  eq FVarE(n) = mt .
+  eq FVarE(x) = x .
+  eq FVarE(e1 op e2) = FVarE(e1) U FVarE(e2) .
+  eq FVarE(If be Then e1 Else e2) = FVarB(be) U FVarE(e1) U FVarE(e2) .
+  eq FVarE(let x = e in e') = (FVarE(e') \ x) U FVarE(e) .
+  eq FVarE(F(el)) = FVar(el) .
+  eq FVarE(receive) = mt .
+  eq FVarE(to e1 : e2) = FVarE(e1) U FVarE(e2) .
+
+  eq FVarB(T) = mt .
+  eq FVarB(F) = mt .
+  eq FVarB(Not be) = FVarB(be) .
+  eq FVarB(be1 bop be2) = FVarB(be1) U FVarB(be2) .
+  eq FVarB(bx) = mt .
+  eq FVarB(Equal(e1,e2)) = FVarE(e1) U FVarE(e2) .
+
   eq FVar(nilEL) = mt .
-  eq FVar(e,el) = FVar(e) U FVar(el) .
-  eq FVar(T) = mt .
-  eq FVar(F) = mt .
-  eq FVar(Not be) = FVar(be) .
-  eq FVar(be1 bop be2) = FVar(be1) U FVar(be2) .
-  eq FVar(bx) = mt .
-  eq FVar(Equal(e1,e2)) = FVar(e1) U FVar(e2) .
+  eq FVar(e,el) = FVarE(e) U FVar(el) .
 
   eq x in mt = false .
   eq x in (y U VS) = (x == y) or (x in VS) .
@@ -204,44 +211,47 @@ fmod SUBSTITUTION is
   *** substitution of an expression for a variable, page 53
 
   op _[_/_] : Exp Exp Var -> Exp .
-  op _[_/_] : BExp Exp Var -> BExp .
-  op _[_/_] : ExpList Exp Var -> ExpList .
+  op _[_/b_] : BExp Exp Var -> BExp .
+  op _[_/_]  : ExpList Exp Var -> ExpList .
 
   eq y [e' / x] = if x == y then e' else y fi .
 
   eq n [e' / x] = n .
 
+  eq receive [e / x] = receive .
+  eq (to e : e') [e'' / x] = to (e [e'' / x]) : (e' [e'' / x]) .
+
   eq (e1 op e2) [e' / x] = (e1 [e' / x]) op (e2 [e' / x]) .
 
   eq (If be Then e1 Else e2) [e' / x] =
-      If (be[e' / x]) Then (e1[e' / x]) Else (e2[e' / x]) .
+      If (be[e' /b x]) Then (e1[e' / x]) Else (e2[e' / x]) .
 
   eq (let x = e1 in e2) [e' / x] = let x = (e1 [e' / x]) in e2 .
 
   ceq (let y = e1 in e2) [e' / x] =
        let y = (e1 [e' / x]) in (e2 [e' / x])
-       if x =/= y /\ y not-in FVar(e') .
+       if x =/= y /\ y not-in FVarE(e') .
 
   ceq (let y = e1 in e2) [e' / x] =
        let x' = (e1 [e' / x]) in ((e2[x' / y]) [e' / x])
-       if x =/= y /\ y in FVar(e') /\
-          x' := new(FVar(e') U FVar(e2)) .
+       if x =/= y /\ y in FVarE(e') /\
+          x' := new(FVarE(e') U FVarE(e2)) .
 
   eq F(el) [e' / x] = F(el [e' / x]) .
 
   eq nilEL [e' / x] = nilEL .
   eq (e, el) [e' / x] =  (e[e' / x]), (el[e' / x]) .
 
-  eq T [e' / x] = T .
-  eq F [e' / x] = F .
+  eq T [e' /b x] = T .
+  eq F [e' /b x] = F .
 
-  eq bx [e' / x] = bx .
+  eq bx [e' /b x] = bx .
 
-  eq (Not be) [e' / x] = Not (be[e' / x]) .
+  eq (Not be) [e' /b x] = Not (be[e' /b x]) .
 
-  eq (be1 bop be2) [e' / x] = (be1 [e' / x]) bop (be2 [e' / x]) .
+  eq (be1 bop be2) [e' /b x] = (be1 [e' /b x]) bop (be2 [e' /b x]) .
 
-  eq Equal(e1,e2) [e' / x] = Equal(e1[e' / x],e2[e' / x]) .
+  eq Equal(e1,e2) [e' /b x] = Equal(e1[e' / x],e2[e' / x]) .
 
 
   *** multiple simultaneous substitution
@@ -269,7 +279,7 @@ mod COMPUTATION is
 
   vars D D' : Dec .
   var ro : ENV .
-  vars n n' : Num .
+  vars n n' id : Num .
   vars x x' x1 x2 y : Var .
   vars bx bx' : BVar .
   var v v' v1 v2 : Num .
@@ -285,58 +295,67 @@ mod COMPUTATION is
 
   rl [VarRc] : D,ro |- x => ro(x) .
 
-  rl  [OpRc] : D,ro |- v op v' => Ap(op,v,v') .
-  crl [OpRc] : D,ro |- e op e' => e'' op e'
+  rl  [OpRc1] : D,ro |- v op v' => Ap(op,v,v') .
+  crl [OpRc2] : D,ro |- e op e' => e'' op e'
             if D,ro |- e  => e'' .
-  crl [OpRc] : D,ro |- e op e' => e op e''
+  crl [OpRc3] : D,ro |- e op e' => e op e''
             if D,ro |- e'  => e'' .
 
-  crl [IfRc] : D,ro |- If be Then e Else e' => If be' Then e Else e'
+  crl [IfRc1] : D,ro |- If be Then e Else e' => If be' Then e Else e'
             if D,ro |- be => be' .
-  rl  [IfRc] : D,ro |- If T Then e Else e' => e .
-  rl  [IfRc] : D,ro |- If F Then e Else e' => e' .
+  rl  [IfRc2] : D,ro |- If T Then e Else e' => e .
+  rl  [IfRc3] : D,ro |- If F Then e Else e' => e' .
 
-  crl [LocRc] : D,ro |- let x = e in e' => let x = e'' in e'
+  crl [LocRc1] : D,ro |- let x = e in e' => let x = e'' in e'
              if D,ro |- e  => e'' .
-  rl  [LocRc] : D,ro |- let x = v in e' => e'[v / x] .
+  rl  [LocRc2] : D,ro |- let x = v in e' => e'[v / x] .
 
-  crl [FunRc] : D,ro |- F(e1) => F(e1')
+  crl [FunRc1] : D,ro |- F(e1) => F(e1')
              if D,ro |- e1 => e1' .
-  crl [FunRc] : D,ro |- F(v1) => e[v1 / x1]
+  crl [FunRc2] : D,ro |- F(v1) => e[v1 / x1]
              if F(x1)<= e & D' := D .
 
-  crl [FunRc] : D,ro |- F(e1,e2) => F(e1',e2)
+  crl [FunRc3] : D,ro |- F(e1,e2) => F(e1',e2)
              if D,ro |- e1 => e1' .
-  crl [FunRc] : D,ro |- F(e1,e2) => F(e1,e2')
+  crl [FunRc4] : D,ro |- F(e1,e2) => F(e1,e2')
              if D,ro |- e2 => e2' .
-  crl [FunRc] : D,ro |- F(v1,v2) => e[v1 / x1][v2 / x2]
+  crl [FunRc5] : D,ro |- F(v1,v2) => e[v1 / x1][v2 / x2]
              if F(x1,x2)<= e & D' := D .
+
+  *** Send simplification
+  crl [send_inner1] : D, ro |- to id : e
+   =>                to id : e'
+   if D,ro |- e  => e' .
+
+  *** Send simplification
+  crl [send_inner2] : D, ro |- to e : e'
+   =>                to e'' : e'
+   if D,ro |- e'  => e'' .
 
 
   *** page 104
 
-  rl [VarRc] : D,ro |- bx => ro(bx) .
+  rl [BVarRc] : D,ro |- bx => ro(bx) .
 
-  rl  [OpRc] : D,ro |- bv bop bv' => Ap(bop,bv,bv') .
-  crl [OpRc] : D,ro |- be bop be' => be'' bop be'
+  rl  [BOpRc1] : D,ro |- bv bop bv' => Ap(bop,bv,bv') .
+  crl [BOpRc2] : D,ro |- be bop be' => be'' bop be'
             if D,ro |- be  => be'' .
-  crl [OpRc] : D,ro |- be bop be' => be bop be''
+  crl [BOpRc3] : D,ro |- be bop be' => be bop be''
             if D,ro |- be'  => be'' .
 
-  crl [NotRc] : D,ro |- Not be => Not be'
+  crl [NotRc1] : D,ro |- Not be => Not be'
              if D,ro |- be => be' .
-  rl  [NotRc] : D,ro |- Not T => F .
-  rl  [NotRc] : D,ro |- Not F => T .
+  rl  [NotRc2] : D,ro |- Not T => F .
+  rl  [NotRc3] : D,ro |- Not F => T .
 
-  crl [EqRc] : D,ro |- Equal(e,e') => Equal(e'',e')
+  crl [EqRc1] : D,ro |- Equal(e,e') => Equal(e'',e')
             if D,ro |- e => e'' .
-  crl [EqRc] : D,ro |- Equal(e,e') => Equal(e,e'')
+  crl [EqRc2] : D,ro |- Equal(e,e') => Equal(e,e'')
             if D,ro |- e' => e'' .
-  crl [EqRc] : D,ro |- Equal(v,v') => T
+  crl [EqRc3] : D,ro |- Equal(v,v') => T
             if v == v' .
-  crl [EqRc] : D,ro |- Equal(v,v') => F
+  crl [EqRc4] : D,ro |- Equal(v,v') => F
             if v =/= v' .
-
 
   *** reflexive, transitive closure
 
@@ -346,20 +365,116 @@ mod COMPUTATION is
   crl [more] : D,ro |= e => v
             if D,ro |- e => e'   *** one step
             /\ D,ro |= e' => v . *** all the rest
-
 endm
 
-fmod PROCESS is
+mod PROCESS is
  pr COMPUTATION .
 
- sort Process .
+ sort Process Processes System .
+ subsort Process < Processes .
 
- op [_|_,_|_] : Qid Env Exp ExpList -> Process [ctor] .
+ sort MsgList .
+ subsort Num < MsgList .
 
-*** Dec
-endfm
+ op nilML : -> MsgList [ctor] .
+ op _._ : MsgList MsgList -> MsgList [ctor assoc id: nilML] .
 
-eof .
+ op [_|_,_|_] : Num ENV Exp MsgList -> Process [ctor] .
 
-rew exDec1, mt |= FV('Fac)(s(s(s(s(s(z)))))) .
-rew exDec1, mt |= FV('Rem)(s(s(s(z))), s(s(s(s(s(z)))))) .
+ op noProc : -> Processes [ctor] .
+ op __ : Processes Processes -> Processes [ctor assoc comm id: noProc] .
+
+ op |_,_| : Processes Dec -> System [ctor] .
+
+ vars nl nl' : MsgList .
+ vars n id id' : Num .
+ var  ps : Processes .
+ vars ro ro' : ENV .
+ vars e e' : Exp .
+ var  x : Var .
+ var  D : Dec .
+
+ rl [receive] :
+    [ id | ro, let x = receive in e | n . nl]
+ => [ id | ro, let x = n in e | nl] .
+
+ rl [send] :
+    | [id | ro, let x = (to id' : n) in e | nl] [id' | ro', e' | nl'] ps , D |
+ => | [id | ro, let x = z in e | nl] [id' | ro', e' | nl' . n] ps , D | .
+
+ crl [advance-process] :
+     | [ id | ro, e  | nl] ps, D |
+  => | [ id | ro, e' | nl] ps, D |
+  if D,ro |- e => e' .
+endm
+
+mod EXAMPLE is
+ pr PROCESS .
+
+ op init : -> System .
+
+ eq init = | [z      | mt, FV('server)(s(z), s^2(z)) | nilML]
+             [s(z)   | mt, FV('client)(z)            | nilML]
+             [s^2(z) | mt, FV('client)(z)            | nilML], decs | .
+
+ op decs : -> Dec .
+ eq decs =
+     FV('client)(V('x)) <= let V('y) = receive
+                           in let V('z) = to V('x) : V('y)
+                              in V('z) &
+     FV('server)(V('x), V('y)) <= let V('a) = to V('x) : z
+                                  in let V('b) = to V('y) : s(z)
+                                     in let V('c) = receive
+                                        in let V('d) = receive
+                                           in If Equal(V('c), z) And Equal(V('d), s(z))
+                                              Then s(z)
+                                              Else z .
+endm
+
+load model-checker.maude
+
+mod PROPS is
+ pr LTL-SIMPLIFIER .
+ pr SATISFACTION .
+ pr PROCESS .
+
+ subsort System < State .
+
+ var  ps : Processes .
+ var  nl : MsgList .
+ vars n id : Num .
+ var  s : System .
+ var  ro : ENV .
+ var  D : Dec .
+
+ op finalValue : Num Num -> Prop [ctor] .
+
+ eq | [id | ro, n | nl] ps , D | |= finalValue(id, n) = true .
+ eq s |= finalValue(id, n) = false .
+endm
+
+mod TEST is
+ pr MODEL-CHECKER .
+ pr EXAMPLE .
+ pr PROPS .
+endm
+
+***(
+red modelCheck(init, <> [] finalValue(z, s(z))) .
+)
+
+select MCPS-INIT .
+
+loop init-mcps .
+
+(select TEST .)
+
+(msg creation to_:_ .)
+
+(msg consumption receive .)
+
+(unit Process id 1 .)
+
+(set mode process .)
+
+(msg passing analysis modelCheck(init, <> [] finalValue(z, s(z))) .)
