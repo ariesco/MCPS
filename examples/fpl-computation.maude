@@ -449,7 +449,7 @@ mod PROPS is
 
  op finalValue : Num Num -> Prop [ctor] .
 
- eq | [id | ro, n | nl] ps , D | |= finalValue(id, n) = true .
+ eq | [id | ro, n | nl] ps, D | |= finalValue(id, n) = true .
  eq s |= finalValue(id, n) = false .
 endm
 
@@ -461,6 +461,10 @@ endm
 
 ***(
 red modelCheck(init, <> [] finalValue(z, s(z))) .
+)
+
+***(
+red in META-LEVEL : metaReduce(upModule('TEST, false), 'modelCheck['init.System,'<>_['`[`]_['finalValue['z.Num,'s['z.Num]]]]]) .
 )
 
 select MCPS-INIT .

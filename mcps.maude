@@ -85,14 +85,16 @@ fmod MCPS-COMMAND-PROCESSING is
  op [_,_] : Bool QidList -> AnalysisResult [ctor] .
 
  vars QIL QIL' MBQIL MAQIL PQIL UQIL : QidList .
- vars T T' T1 T2 T3 T4 P LHS : Term .
- vars TL TL' TL'' PROPS : TermList .
+ vars TL TL' TL'' TL1 TL2 PROPS : TermList .
+ vars T T' T'' T1 T2 T3 T4 P LHS : Term .
  vars QS QS' MS RL RC RD : QidSet .
+ vars CI CI' CI'' : CompInfo .
  var  ME : ModuleExpression .
  var  R4T : Result4Tuple .
  var  SB : Substitution .
  vars TS TS' : TermSet .
  var  COND : Condition .
+ var  PI : ProcessInfo .
  var  RP : ResultPair .
  var  CTXT : Context .
  var  DB : Database .
@@ -207,8 +209,8 @@ fmod MCPS-COMMAND-PROCESSING is
                  -> AnalysisResult .
  ceq processMPA(T, ME, QS, QS', Q, N, MODE, DB) = processMPA(T, M, QS, QS', Q, N, MODE)
   if M := if compiledModule(ME, DB)
-          then getFlatModule(ME, DB)
-          else getFlatModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
+          then getTopModule(ME, DB)
+          else getTopModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
           fi .
 
  op processMPA : Term Module QidSet QidSet Qid Nat Mode -> AnalysisResult .
@@ -216,7 +218,7 @@ fmod MCPS-COMMAND-PROCESSING is
                                       processMPAParse(T', M, QS, QS', Q, N, MODE, PROPS)
   if RP := metaParse(M, downQidList(T), 'ModelCheckResult) /\
      T' := getTerm(RP) /\
-     PROPS := getProps(M, T') .
+     PROPS := getProps(M, T') [print M] .
  eq processMPA(T, M, QS, QS', Q, N, MODE) = [false, error-term-mc] [owise] .
 
  op processMPAParse : Term Module QidSet QidSet Qid Nat Mode TermList -> AnalysisResult .
@@ -228,14 +230,68 @@ fmod MCPS-COMMAND-PROCESSING is
   if T' := getTerm(metaReduce(M, T)) .
 
  op processMPARules : Module Term QidSet QidSet Qid Nat Mode TermList -> AnalysisResult .
- ceq processMPARules(M, T, QS, QS', Q, N, MODE, PROPS) =
-                               processMPAMode(M, T, QS, QS', Q, N, MODE, PROPS, RC, RD)
+ ceq processMPARules(M, 'counterexample[TL], QS, QS', Q, N, MODE, PROPS) =
+                               processMPAMode(M, TL'', QS, QS', Q, N, MODE, PROPS, RC, RD)
   if RC := getRulesUsing(M, QS) /\
-     RD := getRulesUsing(M, QS') .
+     RD := getRulesUsing(M, QS') /\
+     '__[TL'] := putTogether(TL) /\
+     TL'' := closeCounterexample(M, TL', RC ; RD) [print TL''] .
 
- op processMPAMode : Module Term QidSet QidSet Qid Nat Mode TermList QidSet QidSet ->
+ op processMPAMode : Module TermList QidSet QidSet Qid Nat Mode TermList QidSet QidSet ->
                      AnalysisResult .
- eq processMPAMode(M, T, QS, QS', Q, N, process, PROPS, RC, RD) = [true, 'Hola] .
+ ceq processMPAMode(M, TL, QS, QS', Q, N, process, PROPS, RC, RD) = [true, QIL]
+  if QIL := processCounterProc(M, TL, QS, QS', Q, N, RC, RD, noInfo) .
+
+ op processCounterProc : Module TermList QidSet QidSet Qid Nat QidSet QidSet CompInfo ->
+                         QidList .
+ eq processCounterProc(M, empty, QS, QS', Q, N, RC, RD, CI) = printCompInfo(M, CI) .
+ ceq processCounterProc(M, ('`{_`,_`}[T1, T2], TL), QS, QS', Q, N, RC, RD, CI) =
+                                   processCounterProc(M, TL, QS, QS', Q, N, RC, RD, CI')
+  if Q' := downTerm(T2) /\
+     not (Q' in RC) /\
+     not (Q' in RD) /\
+     CI' := updateValues(M, T1, CI, Q, N) [print "omitido " Q'] .
+ ceq processCounterProc(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI) =
+                 processCounterProc(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI'')
+  if Q' := downTerm(T2) /\
+     Q' in RC /\
+     PI := getProcInfoSend(M, T1, T3, Q', QS, Q, N) /\
+     CI' := combine(CI, PI) /\
+     CI'' := updateValues(M, T1, CI', Q, N) [print "enviado " Q'] .
+ ceq processCounterProc(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI) =
+                 processCounterProc(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI'')
+  if Q' := downTerm(T2) /\
+     Q' in RD /\
+     PI := getProcInfoReceive(M, T1, T3, Q', QS', Q, N) /\
+     CI' := combine(CI, PI) /\
+     CI'' := updateValues(M, T1, CI', Q, N) [print "recibido " Q'] .
+
+ op updateValues : Module Term CompInfo Sort Nat -> CompInfo .
+ ceq updateValues(M, T, CI, S, N) = updateValues(M, TS, N, CI)
+  if TS := getTermsOfSort(M, T, S) .
+
+ op updateValues : Module TermSet Nat CompInfo -> CompInfo .
+ eq updateValues(M, emptyTermSet, N, CI) = CI .
+ ceq updateValues(M, T | TS, N, CI) = updateValues(M, TS, N, CI')
+  if PI := [getNth(T, N), T, empty, empty] /\
+     CI' := combine(CI, PI) .
+
+ *** Module
+ *** Term being rewritten
+ *** Reached term
+ *** Rule label
+ *** Set of operators of interest
+ *** Unit sort
+ *** Id argument
+ op getProcInfoReceive : Module Term Term Qid QidSet Qid Nat -> ProcessInfo .
+ ceq getProcInfoReceive(M, T1, T2, Q, QS, S, N) = [T'', T', empty, empty]
+  if {T, Ty, SB, CTXT} := findXapply(M, T1, Q, 0, T2) /\
+     LHS := getLHS(M, Q) /\
+     TS := getTermsOfSort(M, LHS, S) /\
+     TL := applySb*(set2list(TS), SB) /\
+     T' := termContaining(M, TL, QS) /\
+     T'' := getNth(T', N) /\
+     TL' := getTermsTopOps(T', QS) [print T'] .
 
  sort ProcessInfo CompInfo .
  subsort ProcessInfo < CompInfo .
@@ -246,6 +302,90 @@ fmod MCPS-COMMAND-PROCESSING is
  op [_,_,_,_] : Term Term TermList TermList -> ProcessInfo [ctor] .
  op noInfo : -> CompInfo [ctor] .
  op __ : CompInfo CompInfo -> CompInfo [ctor assoc comm id: noInfo] .
+
+ **********************************************************************************
+ *** Auxiliary function: termContaining                                         ***
+ *** Returns the first term containing any term with a top operator contained   ***
+ *** in QS.                                                                     ***
+ **********************************************************************************
+
+ op termContaining : Module TermList QidSet ~> Term .
+ ceq termContaining(M, (T, TL), QS) = if TL' == empty
+                                      then termContaining(M, TL, QS)
+                                      else T
+                                      fi
+  if TL' := getTermsTopOps(T, QS) .
+
+ **********************************************************************************
+ *** Auxiliary function: getProcInfoSend                                        ***
+ *** Computes the changes produced when sending a message.                      ***
+ *** It is computed for the "process" mode.                                     ***
+ *** 1st argument: Module were the rewrites take place.                         ***
+ *** 2nd argument: Term being rewritten.                                        ***
+ *** 3rd argument: Reached term (next term in the counterexample).              ***
+ *** 4th argument: Rule label used in the counterexample.                       ***
+ *** 5th argument: Set of operators producing messages.                         ***
+ *** 6th argument: Unit sort.                                                   ***
+ *** 7th argument: Id argument.                                                 ***
+ **********************************************************************************
+
+ op getProcInfoSend : Module Term Term Qid QidSet Qid Nat -> ProcessInfo .
+ ceq getProcInfoSend(M, T1, T2, Q, QS, S, N) = [T'', T3, TL', empty]
+  if {T, Ty, SB, CTXT} := findXapply(M, T1, Q, 0, T2) /\
+     LHS := getLHS(M, Q) /\
+     TS := getTermsOfSort(M, LHS, S) /\
+     TL := set2list(TS) /\
+     T' := termContaining(M, TL, QS) /\
+     T'' := applySb(getNth(T', N), SB) /\
+     TL' := applySb(getTermsTopOps(T', QS), SB) /\
+     T3 := applySb(T', SB) .
+
+ **********************************************************************************
+ *** Auxiliary function: combine                                                ***
+ *** Combines a ProcessInfo into a CompInfo. If the id exists it add the        ***
+ *** elements, otherwise, it adds the ProcessInfo                               ***
+ **********************************************************************************
+
+ op combine : CompInfo ProcessInfo -> CompInfo .
+ eq combine(CI [T, T', TL, TL'], [T, T1, TL1, TL2]) = CI [T, T1, (TL, TL1), (TL', TL2)] .
+ eq combine(CI, PI) = CI PI [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: printCompInfo                                          ***
+ *** Uses metaPrettyPrint to generate a list of Qids separated by commas.       ***
+ **********************************************************************************
+
+ op printCompInfo : Module CompInfo -> QidList .
+ eq printCompInfo(M, CI) = '`{ 'processes '= '`[ $printCompInfo(M, CI) '\n '`] '`} .
+
+ op $printCompInfo : Module CompInfo -> QidList .
+ eq $printCompInfo(M, noInfo) = nil .
+ eq $printCompInfo(M, PI CI) = printProcessInfo(M, PI)
+                               if CI == noInfo
+                               then nil
+                               else '`, $printCompInfo(M, CI)
+                               fi .
+
+ op printProcessInfo : Module ProcessInfo -> QidList .
+ eq printProcessInfo(M, [T, T', TL, TL']) =
+      '\n '`{ '\n
+      '\t 'id          '= metaPrettyPrint(M, T)    '`, '\n
+      '\t 'value       '= metaPrettyPrint(M, T')   '`, '\n
+      '\t 'sent        '= '`[ printList(M, TL) '`] '`, '\n
+      '\t 'consumed    '= '`[ printList(M, TL') '`] '\n
+      '`} .
+
+ **********************************************************************************
+ *** Auxiliary function: printList                                              ***
+ *** Uses metaPrettyPrint to generate a list of Qids separated by commas.       ***
+ **********************************************************************************
+ op printList : Module TermList -> QidList .
+ eq printList(M, empty) = nil .
+ eq printList(M, (T, TL)) = metaPrettyPrint(M, T)
+                            if TL == empty
+                            then nil
+                            else '`, ' printList(M, TL)
+                            fi .
 
  **********************************************************************************
  *** Auxiliary function: getRulesUsing                                          ***
@@ -403,6 +543,7 @@ fmod MCPS-COMMAND-PROCESSING is
                                 $closeCounterexample(M, (TL, '`{_`,_`}[T1, T2]), T1, Q, 0)
   if Q := downTerm(T2) /\
      Q in RL .
+ eq closeCounterexample(M, TL, RL) = TL [owise] .
 
  op $closeCounterexample : Module TermList Term Qid Nat -> TermList .
  ceq $closeCounterexample(M, TL, T, Q, N) = if closed(TL, T')
@@ -482,16 +623,15 @@ fmod MCPS-COMMAND-PROCESSING is
  *** Given the current module and the set of sorts used for the memory          ***
  *** it returns the set of rule labels that modifies terms of these sorts.      ***
  **********************************************************************************
-
  op putTogether : TermList ~> Term .
  eq putTogether(T) = T .
  eq putTogether(('__[TL], '__[TL'], TL'')) = putTogether(('__[TL, TL'], TL'')) .
+ eq putTogether(('__[TL], T)) = '__[TL, T] [owise] .
 
  **********************************************************************************
  *** Auxiliary function: _minus_                                                ***
  *** Removes the elements in the second set from the first one.                 ***
  **********************************************************************************
-
  op _minus_ : TermSet TermSet -> TermSet .
  eq (T | TS) minus (T | TS') = TS minus TS' .
  eq TS minus TS' = TS [owise] .
@@ -500,7 +640,6 @@ fmod MCPS-COMMAND-PROCESSING is
  *** Auxiliary function: _in_                                                   ***
  *** Checks whether the term is in the set.                                     ***
  **********************************************************************************
-
  op _in_ : Term TermSet -> Bool .
  eq T in (T | TS) = true .
  eq T in TS = false [owise] .
@@ -509,10 +648,17 @@ fmod MCPS-COMMAND-PROCESSING is
  *** Auxiliary function: _in_                                                   ***
  *** Checks whether the term is in the set.                                     ***
  **********************************************************************************
-
  op _in_ : Qid QidSet -> Bool .
  eq Q in (Q ; QS) = true .
  eq Q in QS = false [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: set2list                                               ***
+ *** Transforms a set of terms into a list.                                     ***
+ **********************************************************************************
+ op set2list : TermSet -> TermList .
+ eq set2list(emptyTermSet) = empty .
+ eq set2list(T | TS) = T, set2list(TS) .
 endfm
 
 mod MCPS is
