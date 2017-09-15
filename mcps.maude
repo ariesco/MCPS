@@ -84,9 +84,20 @@ fmod MCPS-COMMAND-PROCESSING is
  *** The second one contains either a JSON or an error message.
  op [_,_] : Bool QidList -> AnalysisResult [ctor] .
 
+ *** Sorts used to store the information for the "process" mode for message passing languages
+ sort ProcessInfo CompInfo .
+ subsort ProcessInfo < CompInfo .
+ *** Id
+ *** Final value
+ *** Msgs sent
+ *** Msgs received
+ op [_,_,_,_] : Term Term TermList TermList -> ProcessInfo [ctor] .
+ op noInfo : -> CompInfo [ctor] .
+ op __ : CompInfo CompInfo -> CompInfo [ctor assoc comm id: noInfo] .
+
  vars QIL QIL' MBQIL MAQIL PQIL UQIL : QidList .
+ vars T T' T'' T1 T2 T3 T4 P LHS RHS : Term .
  vars TL TL' TL'' TL1 TL2 PROPS : TermList .
- vars T T' T'' T1 T2 T3 T4 P LHS : Term .
  vars QS QS' MS RL RC RD : QidSet .
  vars CI CI' CI'' : CompInfo .
  var  ME : ModuleExpression .
@@ -191,11 +202,6 @@ fmod MCPS-COMMAND-PROCESSING is
             fi /\
      QIL' := '\t 'unit '= metaPrettyPrint(M, T') '`, '\n .
 
- op findXapply : Module Term Qid Nat Term -> Result4Tuple .
- ceq findXapply(M, T1, Q, N, T2) = R4T
-  if R4T := metaXapply(M, T1, Q, none, 0, unbounded, N) /\
-     T2 == getTerm(R4T) .
-
  **********************************************************************************
  ***                                                                            ***
  ***                           MAIN FUNCTION: processMPA                        ***
@@ -209,8 +215,8 @@ fmod MCPS-COMMAND-PROCESSING is
                  -> AnalysisResult .
  ceq processMPA(T, ME, QS, QS', Q, N, MODE, DB) = processMPA(T, M, QS, QS', Q, N, MODE)
   if M := if compiledModule(ME, DB)
-          then getTopModule(ME, DB)
-          else getTopModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
+          then getFlatModule(ME, DB)
+          else getFlatModule(modExp(evalModExp(ME, DB)), database(evalModExp(ME, DB)))
           fi .
 
  op processMPA : Term Module QidSet QidSet Qid Nat Mode -> AnalysisResult .
@@ -218,7 +224,7 @@ fmod MCPS-COMMAND-PROCESSING is
                                       processMPAParse(T', M, QS, QS', Q, N, MODE, PROPS)
   if RP := metaParse(M, downQidList(T), 'ModelCheckResult) /\
      T' := getTerm(RP) /\
-     PROPS := getProps(M, T') [print M] .
+     PROPS := getProps(M, T') .
  eq processMPA(T, M, QS, QS', Q, N, MODE) = [false, error-term-mc] [owise] .
 
  op processMPAParse : Term Module QidSet QidSet Qid Nat Mode TermList -> AnalysisResult .
@@ -235,12 +241,20 @@ fmod MCPS-COMMAND-PROCESSING is
   if RC := getRulesUsing(M, QS) /\
      RD := getRulesUsing(M, QS') /\
      '__[TL'] := putTogether(TL) /\
-     TL'' := closeCounterexample(M, TL', RC ; RD) [print TL''] .
+     TL'' := closeCounterexample(M, TL', RC ; RD) .
 
  op processMPAMode : Module TermList QidSet QidSet Qid Nat Mode TermList QidSet QidSet ->
                      AnalysisResult .
  ceq processMPAMode(M, TL, QS, QS', Q, N, process, PROPS, RC, RD) = [true, QIL]
   if QIL := processCounterProc(M, TL, QS, QS', Q, N, RC, RD, noInfo) .
+
+ op processCounterProc : Module TermList QidSet QidSet Qid Nat QidSet QidSet CompInfo ->
+                         QidList .
+
+ **********************************************************************************
+ *** Auxiliary function: processCounterProc                                     ***
+ *** Computes the JSON for message-passing semantics with "process" mode.       ***
+ **********************************************************************************
 
  op processCounterProc : Module TermList QidSet QidSet Qid Nat QidSet QidSet CompInfo ->
                          QidList .
@@ -250,21 +264,26 @@ fmod MCPS-COMMAND-PROCESSING is
   if Q' := downTerm(T2) /\
      not (Q' in RC) /\
      not (Q' in RD) /\
-     CI' := updateValues(M, T1, CI, Q, N) [print "omitido " Q'] .
+     CI' := updateValues(M, T1, CI, Q, N) .
  ceq processCounterProc(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI) =
                  processCounterProc(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI'')
   if Q' := downTerm(T2) /\
      Q' in RC /\
      PI := getProcInfoSend(M, T1, T3, Q', QS, Q, N) /\
      CI' := combine(CI, PI) /\
-     CI'' := updateValues(M, T1, CI', Q, N) [print "enviado " Q'] .
+     CI'' := updateValues(M, T1, CI', Q, N) .
  ceq processCounterProc(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI) =
                  processCounterProc(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, CI'')
   if Q' := downTerm(T2) /\
      Q' in RD /\
      PI := getProcInfoReceive(M, T1, T3, Q', QS', Q, N) /\
      CI' := combine(CI, PI) /\
-     CI'' := updateValues(M, T1, CI', Q, N) [print "recibido " Q'] .
+     CI'' := updateValues(M, T1, CI', Q, N) .
+
+ **********************************************************************************
+ *** Auxiliary function: updateValues                                           ***
+ *** Updates the values of all units.                                           ***
+ **********************************************************************************
 
  op updateValues : Module Term CompInfo Sort Nat -> CompInfo .
  ceq updateValues(M, T, CI, S, N) = updateValues(M, TS, N, CI)
@@ -276,32 +295,31 @@ fmod MCPS-COMMAND-PROCESSING is
   if PI := [getNth(T, N), T, empty, empty] /\
      CI' := combine(CI, PI) .
 
- *** Module
- *** Term being rewritten
- *** Reached term
- *** Rule label
- *** Set of operators of interest
- *** Unit sort
- *** Id argument
- op getProcInfoReceive : Module Term Term Qid QidSet Qid Nat -> ProcessInfo .
- ceq getProcInfoReceive(M, T1, T2, Q, QS, S, N) = [T'', T', empty, empty]
-  if {T, Ty, SB, CTXT} := findXapply(M, T1, Q, 0, T2) /\
-     LHS := getLHS(M, Q) /\
-     TS := getTermsOfSort(M, LHS, S) /\
-     TL := applySb*(set2list(TS), SB) /\
-     T' := termContaining(M, TL, QS) /\
-     T'' := getNth(T', N) /\
-     TL' := getTermsTopOps(T', QS) [print T'] .
+ **********************************************************************************
+ *** Auxiliary function: getSubstitutionOp                                      ***
+ *** Looks for the term that substituted the consumption operator.              ***
+ **********************************************************************************
 
- sort ProcessInfo CompInfo .
- subsort ProcessInfo < CompInfo .
- *** Id
- *** Final value
- *** Msgs sent
- *** Msgs received
- op [_,_,_,_] : Term Term TermList TermList -> ProcessInfo [ctor] .
- op noInfo : -> CompInfo [ctor] .
- op __ : CompInfo CompInfo -> CompInfo [ctor assoc comm id: noInfo] .
+ op getSubstitutionOp : Term Term QidSet ~> Term .
+ eq getSubstitutionOp(Q[TL], T, Q ; QS) = T .
+ ceq getSubstitutionOp(C, T, QS) = T
+  if getName(C) in QS .
+ eq getSubstitutionOp(Q[TL], Q[TL'], QS) = getSubstitutionOp*(TL, TL', QS) [owise] .
+
+ op getSubstitutionOp* : TermList TermList QidSet ~> Term .
+ ceq getSubstitutionOp*((T, TL), (T', TL'), QS) = T''
+  if T'' := getSubstitutionOp(T, T', QS) .
+ eq getSubstitutionOp*((T, TL), (T', TL'), QS) = getSubstitutionOp*(TL, TL', QS) [owise] .
+
+ **********************************************************************************
+ *** Auxiliary function: findXapply                                             ***
+ *** Applies metaXapply until the appropriate matching is found.                ***
+ **********************************************************************************
+
+ op findXapply : Module Term Qid Nat Term -> Result4Tuple .
+ ceq findXapply(M, T1, Q, N, T2) = R4T
+  if R4T := metaXapply(M, T1, Q, none, 0, unbounded, N) /\
+     T2 == getTerm(R4T) .
 
  **********************************************************************************
  *** Auxiliary function: termContaining                                         ***
@@ -339,6 +357,31 @@ fmod MCPS-COMMAND-PROCESSING is
      T'' := applySb(getNth(T', N), SB) /\
      TL' := applySb(getTermsTopOps(T', QS), SB) /\
      T3 := applySb(T', SB) .
+
+ **********************************************************************************
+ *** Auxiliary function: getProcInfoReceive                                     ***
+ *** Computes the changes produced when consuming a message.                    ***
+ *** It is computed for the "process" mode.                                     ***
+ *** 1st argument: Module were the rewrites take place.                         ***
+ *** 2nd argument: Term being rewritten.                                        ***
+ *** 3rd argument: Reached term (next term in the counterexample).              ***
+ *** 4th argument: Rule label used in the counterexample.                       ***
+ *** 5th argument: Set of operators consuming messages.                         ***
+ *** 6th argument: Unit sort.                                                   ***
+ *** 7th argument: Id argument.                                                 ***
+ **********************************************************************************
+
+ op getProcInfoReceive : Module Term Term Qid QidSet Qid Nat -> ProcessInfo .
+ ceq getProcInfoReceive(M, T1, T2, Q, QS, S, N) = [T'', T', empty, T4]
+  if {T, Ty, SB, CTXT} := findXapply(M, T1, Q, 0, T2) /\
+     LHS := getLHS(M, Q) /\
+     RHS := getRHS(M, Q) /\
+     TS := getTermsOfSort(M, LHS, S) /\
+     TL := applySb*(set2list(TS), SB) /\
+     T' := termContaining(M, TL, QS) /\
+     T'' := getNth(T', N) /\
+     T3 := getSubstitutionOp(LHS, RHS, QS) /\
+     T4 := applySb(T3, SB) .
 
  **********************************************************************************
  *** Auxiliary function: combine                                                ***
@@ -456,6 +499,16 @@ fmod MCPS-COMMAND-PROCESSING is
  ceq getLHS(M, Q) = T
   if rl T => T' [AtS label(Q)] . RS := getRls(M) .
  ceq getLHS(M, Q) = T
+  if crl T => T' if COND [AtS label(Q)] . RS := getRls(M) .
+
+ **********************************************************************************
+ *** Auxiliary function: getRHS                                                 ***
+ *** Returns the rigthand side of the rule identified by the given label.       ***
+ **********************************************************************************
+ op getRHS : Module Qid ~> Term .
+ ceq getRHS(M, Q) = T'
+  if rl T => T' [AtS label(Q)] . RS := getRls(M) .
+ ceq getRHS(M, Q) = T'
   if crl T => T' if COND [AtS label(Q)] . RS := getRls(M) .
 
  **********************************************************************************

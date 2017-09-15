@@ -465,6 +465,7 @@ red modelCheck(init, <> [] finalValue(z, s(z))) .
 
 ***(
 red in META-LEVEL : metaReduce(upModule('TEST, false), 'modelCheck['init.System,'<>_['`[`]_['finalValue['z.Num,'s['z.Num]]]]]) .
+red in META-LEVEL : metaReduce(upModule('TEST, true), 'modelCheck['init.System,'<>_['`[`]_['finalValue['z.Num,'s['z.Num]]]]]) .
 )
 
 select MCPS-INIT .
