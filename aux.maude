@@ -21,7 +21,7 @@ fmod PRINT is
 
  op mcps-banner : -> QidList .
  eq mcps-banner = '\n '\t 'MCPS '1.0: 'Model 'checking 'parameterized 'by 'the 'semantics
-                  '\n '\t ' ' ' '\t '\t '`( 'August '15th '`, '\s '2017 '`) '\n .
+                  '\n '\t ' ' ' '\t '\t '`( 'September '18th '`, '\s '2017 '`) '\n .
 
  op print-memory-sorts : QidList -> QidList .
  eq print-memory-sorts(QIL) = '\n '\b '\! 'Memory 'sorts 'introduced: '\o QIL '\n .

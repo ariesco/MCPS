@@ -99,7 +99,7 @@ fmod MCPS-COMMAND-PROCESSING is
  vars T T' T'' T1 T2 T3 T4 P LHS RHS : Term .
  vars TL TL' TL'' TL1 TL2 PROPS : TermList .
  vars QS QS' MS RL RC RD : QidSet .
- vars CI CI' CI'' : CompInfo .
+ vars CI CI' CI'' CIA : CompInfo .
  var  ME : ModuleExpression .
  var  TIL : TraceInfoList .
  var  R4T : Result4Tuple .
@@ -252,32 +252,46 @@ fmod MCPS-COMMAND-PROCESSING is
  *** We need to start with a dummy TraceInfo, so the set is built on top of noInfo.
  *** This dummy element is removed in the base case of processCounterTrace
  ceq processMPAMode(M, TL, QS, QS', Q, N, trace, PROPS, RC, RD) = [true, QIL]
-  if QIL := processCounterTrace(M, TL, QS, QS', Q, N, RC, RD, | ''foo.Qid, 'foo, empty, noInfo |) .
+  if QIL := processCounterTrace(M, TL, QS, QS', Q, N, PROPS, RC, RD,
+                                | ''foo.Qid, 'foo, empty, noInfo, noInfo, nil |) .
 
- op processCounterTrace : Module TermList QidSet QidSet Qid Nat QidSet QidSet TraceInfoList ->
-                          QidList .
+ op processCounterTrace : Module TermList QidSet QidSet Qid Nat TermList QidSet QidSet
+                          TraceInfoList -> QidList .
  *** The dummy element in the head is removed.
- eq processCounterTrace(M, empty, QS, QS', Q, N, RC, RD, TI TIL) = printTraceInfoList(M, TIL) [print TIL] .
- ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], TL), QS, QS', Q, N, RC, RD, TIL) =
-                                   processCounterTrace(M, TL, QS, QS', Q, N, RC, RD, TIL)
+ ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N,
+                         PROPS, RC, RD, TIL) =
+        processCounterTrace(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, PROPS, RC, RD, TIL)
   if Q' := downTerm(T2) /\
-     not (Q' in (RC ; RD)) .
- ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, TIL) =
-                                   processCounterTrace(M, TL, QS, QS', Q, N, RC, RD, TIL TI)
+     not (Q' in (RC ; RD)) /\
+     CI := getLastCI(TIL) /\
+     CI' := updateValues(M, T1, CI, Q, N) /\
+     CIA := updateValues(M, T3, CI', Q, N) /\
+     QIL := printProps(M, T1, T3, PROPS) /\
+     TI := [ 'prop-changed, CI', CIA, QIL ] .
+ ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N,
+                         PROPS, RC, RD, TIL) =
+        processCounterTrace(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, PROPS, RC, RD, TIL TI)
   if Q' := downTerm(T2) /\
      Q' in RC /\
      CI := getLastCI(TIL) /\
      [T, T', TL', empty] := getProcInfoSend(M, T1, T3, Q', QS, Q, N) /\
-     CI' := combine(CI, [T, T', TL', empty]) /\
-     TI := | T, 'msg-created, TL', CI' | .
- ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N, RC, RD, TIL) =
-                                   processCounterTrace(M, TL, QS, QS', Q, N, RC, RD, TIL TI)
+     CI' := updateValues(M, T1, CI, Q, N) /\
+     CIA := combine(updateValues(M, T3, CI', Q, N), [T, T', TL', empty]) /\
+     QIL := printProps(M, T1, T3, PROPS) /\
+     TI := | T, 'msg-created, TL', CI', CIA, QIL | .
+ ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N,
+                         PROPS, RC, RD, TIL) =
+        processCounterTrace(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, PROPS, RC, RD, TIL TI)
   if Q' := downTerm(T2) /\
      Q' in RD /\
      CI := getLastCI(TIL) /\
      [T, T', empty, TL'] := getProcInfoReceive(M, T1, T3, Q', QS', Q, N) /\
-     CI' := combine(CI, [T, T', empty, TL']) /\
-     TI := | T, 'msg-consumed, TL', CI' | .
+     CI' := updateValues(M, T1, CI, Q, N) /\
+     CIA := combine(updateValues(M, T3, CI', Q, N), [T, T', empty, TL']) /\
+     QIL := printProps(M, T1, T3, PROPS) /\
+     TI := | T, 'msg-consumed, TL', CI', CIA, QIL | .
+ eq processCounterTrace(M, TL, QS, QS', Q, N, PROPS, RC, RD, TI TIL) =
+                                   printTraceInfoList(M, TIL) [owise] .
 
  sort TraceInfo TraceInfoList .
  subsort TraceInfo < TraceInfoList .
@@ -285,7 +299,14 @@ fmod MCPS-COMMAND-PROCESSING is
  *** Action (either 'msg-created or 'msg-consumed)
  *** Msgs
  *** Current state
- op |_,_,_,_| : Term Qid TermList CompInfo -> TraceInfo .
+ *** Next state
+ *** Props info
+ op |_,_,_,_,_,_| : Term Qid TermList CompInfo CompInfo QidList -> TraceInfo .
+ *** Action ('prop-changed for the time being)
+ *** Current state
+ *** Next state
+ *** Props info
+ op [_,_,_,_] : Qid CompInfo CompInfo QidList -> TraceInfo .
  op mtTrace : -> TraceInfoList [ctor] .
  op __ : TraceInfoList TraceInfoList -> TraceInfoList [ctor assoc id: mtTrace] .
 
@@ -304,12 +325,14 @@ fmod MCPS-COMMAND-PROCESSING is
                                      $printTraceInfoList(M, TIL) .
 
  op printTraceInfo : Module TraceInfo -> QidList .
- eq printTraceInfo(M, | T, Q, TL, CI |) =
+ eq printTraceInfo(M, | T, Q, TL, CI, CIA, QIL |) =
         '`{ '\n
         'id      '= metaPrettyPrint(M, T) '`, '\n
         'action  '= Q '`, '\n
         'messages '= '`[ printList(M, TL) '`] '`, '\n
-        printCompInfoTrace(M, CI) '\n
+        printCompInfoTrace(M, CI, 'processes-before) '`, '\n
+        printCompInfoTrace(M, CIA, 'processes-after) '`, '\n
+        'props '= QIL '\n
         '`} .
 
  **********************************************************************************
@@ -318,7 +341,7 @@ fmod MCPS-COMMAND-PROCESSING is
  **********************************************************************************
 
  op getLastCI : TraceInfoList ~> CompInfo .
- eq getLastCI(TIL | T, Q, TL, CI |) = CI .
+ eq getLastCI(TIL | T, Q, TL, CI, CIA, QIL |) = CIA .
 
  **********************************************************************************
  *** Auxiliary function: processCounterProc                                     ***
@@ -470,8 +493,8 @@ fmod MCPS-COMMAND-PROCESSING is
  op printCompInfo : Module CompInfo -> QidList .
  eq printCompInfo(M, CI) = '`{ 'processes '= '`[ $printCompInfo(M, CI) '\n '`] '`} .
 
- op printCompInfoTrace : Module CompInfo -> QidList .
- eq printCompInfoTrace(M, CI) = 'processes '= '`[ $printCompInfo(M, CI) '\n '`] .
+ op printCompInfoTrace : Module CompInfo Qid -> QidList .
+ eq printCompInfoTrace(M, CI, Q) = Q '= '`[ $printCompInfo(M, CI) '\n '`] .
 
  op $printCompInfo : Module CompInfo -> QidList .
  eq $printCompInfo(M, noInfo) = nil .
