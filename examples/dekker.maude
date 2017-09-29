@@ -2,20 +2,16 @@
   ---- by the Maude team
   load model-checker.maude
 
-  select MCPS-INIT .
-
-  loop init-mcps .
-
-  (fmod MEMORY is
+  fmod MEMORY is
     protecting INT .
     protecting QID .
     sort Memory .
     op none : -> Memory [ctor] .
     op __ : Memory Memory -> Memory [ctor assoc comm id: none] .
     op `[_`,_`] : Qid Int -> Memory [ctor] .
-  endfm)
+  endfm
 
-  (fmod TESTS is
+  fmod TESTS is
     protecting MEMORY .
     sort Test .
     op _=_ : Qid Int -> Test [ctor] .
@@ -25,31 +21,28 @@
     var  M : Memory .
     vars N N' : Int .
     eq eval(Q = N, [Q, N'] M) = N == N' .
-  endfm)
+  endfm
 
-  (fmod SEQUENTIAL is
+  fmod SEQUENTIAL is
     protecting TESTS .
-    sorts UserStatement LoopingUserStatement Program .
-    subsort LoopingUserStatement < UserStatement < Program .
+    sorts Program .
     op skip : -> Program [ctor] .
     op _;_ : Program Program -> Program [ctor prec 61 assoc id: skip] .
     op _:=_ : Qid Int -> Program [ctor] .
     op if_then_fi : Test Program -> Program [ctor] .
     op while_do_od : Test Program -> Program [ctor] .
     op repeat_forever : Program -> Program [ctor] .
-  endfm)
+  endfm
 
-  (mod PARALLEL is
+  mod PARALLEL is
     protecting SEQUENTIAL .
     sorts Pid Process Soup MachineState .
     subsort Process < Soup .
-    op `[_`,_`] : Pid Program -> Process [ctor] .
+    op [_,_] : Pid Program -> Process [ctor] .
     op empty : -> Soup [ctor] .
     op _|_ : Soup Soup -> Soup [ctor prec 61 assoc comm id: empty] .
-    op `{_`,_`,_`} : Soup Memory Pid -> MachineState [ctor] .
+    op {_,_} : Soup Memory -> MachineState [ctor] .
 
-    var  L : LoopingUserStatement .
-    var  U : UserStatement .
     vars P R : Program .
     var  M : Memory .
     vars I J : Pid .
@@ -58,37 +51,28 @@
     var  T : Test .
     var  Q : Qid .
 
-    rl [user] :
-       {[I, U ; R] | S, M, J}
-    => {[I, R] | S, M, I} .
-
-    rl [loop-user] :
-       {[I, L ; R] | S, M, J}
-    => {[I, L ; R] | S, M, I} .
-
     rl [asg] :
-       {[I, (Q := N) ; R] | S, [Q, X] M, J}
-    => {[I, R] | S, [Q, N] M, I} .
+       {[I, (Q := N) ; R] | S, [Q, X] M}
+    => {[I, R] | S, [Q, N] M} .
 
     rl [if] :
-       {[I, if T then P fi ; R] | S, M, J}
-    => {[I, if eval(T, M) then P else skip fi ; R] | S, M, I} .
+       {[I, if T then P fi ; R] | S, M}
+    => {[I, if eval(T, M) then P else skip fi ; R] | S, M} .
 
     rl [while] :
-       {[I, while T do P od ; R] | S, M, J}
+       {[I, while T do P od ; R] | S, M}
     => {[I, if eval(T, M)
             then (P ; while T do P od)
-            else skip fi ; R] | S, M, I} .
+            else skip fi ; R] | S, M} .
 
     rl [repeat] :
-       {[I, repeat P forever ; R] | S, M, J}
-    => {[I, P ; repeat P forever ; R] | S, M, I} .
-  endm)
+       {[I, repeat P forever ; R] | S, M}
+    => {[I, P ; repeat P forever ; R] | S, M} .
+  endm
 
-  (mod DEKKER is
+  mod DEKKER is
     extending PARALLEL .
     subsort Int < Pid .
-    op crit : -> UserStatement .
     ops p1 p2 : -> Program .
     op initialMem : -> Memory .
     op initial : -> MachineState .
@@ -105,8 +89,8 @@
           od ;
           *** Critical section
           'cs1 := 1 ;
-          *** end critical section
           'cs1 := 0 ;
+          *** end critical section
           'turn := 2 ;
           'c1 := 0
         forever .
@@ -124,17 +108,17 @@
           od ;
           *** Critical section
           'cs2 := 1 ;
-          *** end critical section
           'cs2 := 0 ;
+          *** end critical section
           'turn := 1 ;
           'c2 := 0
         forever .
 
     eq initialMem = ['c1, 0] ['c2, 0] ['turn, 1] ['cs1, 0] ['cs2, 0] .
-    eq initial = { [1, p1] | [2, p2], initialMem, 0 } .
-  endm)
+    eq initial = { [1, p1] | [2, p2], initialMem } .
+  endm
 
-  (mod DEKKER-CHECK is
+  mod DEKKER-CHECK is
     protecting DEKKER .
     including MODEL-CHECKER .
     including LTL-SIMPLIFIER .
@@ -147,14 +131,18 @@
     vars I J : Pid .
     var  Q : Qid .
 
-    op exec : Pid -> Prop [ctor] .
-    eq {S, M [Q, 1], J} |= enterCrit(Q) = true .
-
     op enterCrit : Qid -> Prop [ctor] .
-    eq {S, M, J} |= exec(J) = true .
-  endm)
+    eq {S, M [Q, 1]} |= enterCrit(Q) = true .
+  endm
 
-(red modelCheck(initial, []~ (enterCrit('cs1) /\ enterCrit('cs2))) .)
+*** red modelCheck(initial, []~ (enterCrit('cs1) /\ enterCrit('cs2))) .
+
+
+select MCPS-INIT .
+
+loop init-mcps .
+
+(select DEKKER-CHECK .)
 
 (memory sorts Memory .)
 

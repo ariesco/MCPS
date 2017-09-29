@@ -160,7 +160,8 @@ fmod MCPS-COMMAND-PROCESSING is
  ceq processCounterexample(M, 'counterexample[TL], RL, MS, US, N, PROPS) =
                               $processCounterexample(M, TL'', RL, MS, US, N, PROPS)
   if '__[TL'] := putTogether(TL) /\
-     TL'' := closeCounterexample(M, TL', RL) .
+     TL'' := closeCounterexample(M, TL', RL) /\
+     N' := | TL'' | .
 
  op $processCounterexample : Module TermList QidSet QidSet Qid Nat TermList -> QidList .
  eq $processCounterexample(M, empty, RL, MS, US, N, PROPS) = nil .
@@ -276,9 +277,10 @@ fmod MCPS-COMMAND-PROCESSING is
      CI := getLastCI(TIL) /\
      [T, T', TL', empty] := getProcInfoSend(M, T1, T3, Q', QS, Q, N) /\
      CI' := updateValues(M, T1, CI, Q, N) /\
-     CIA := combine(updateValues(M, T3, CI', Q, N), [T, T', TL', empty]) /\
+     *** CIA := combine(updateValues(M, T3, CI', Q, N), [T, T', TL', empty]) /\
+     CIA := updateValues(M, T3, combine(CI', [T, T', TL', empty]), Q, N) /\
      QIL := printProps(M, T1, T3, PROPS) /\
-     TI := | T, 'msg-created, TL', CI', CIA, QIL | .
+     TI := | T, 'msg-sent, TL', CI', CIA, QIL | .
  ceq processCounterTrace(M, ('`{_`,_`}[T1, T2], '`{_`,_`}[T3, T4], TL), QS, QS', Q, N,
                          PROPS, RC, RD, TIL) =
         processCounterTrace(M, ('`{_`,_`}[T3, T4], TL), QS, QS', Q, N, PROPS, RC, RD, TIL TI)
@@ -287,7 +289,9 @@ fmod MCPS-COMMAND-PROCESSING is
      CI := getLastCI(TIL) /\
      [T, T', empty, TL'] := getProcInfoReceive(M, T1, T3, Q', QS', Q, N) /\
      CI' := updateValues(M, T1, CI, Q, N) /\
-     CIA := combine(updateValues(M, T3, CI', Q, N), [T, T', empty, TL']) /\
+     *** CIA := combine(updateValues(M, T3, CI', Q, N), [T, T', empty, TL']) /\
+     CIA := updateValues(M, T3, combine(CI', [T, T', empty, TL']), Q, N) /\
+
      QIL := printProps(M, T1, T3, PROPS) /\
      TI := | T, 'msg-consumed, TL', CI', CIA, QIL | .
  eq processCounterTrace(M, TL, QS, QS', Q, N, PROPS, RC, RD, TI TIL) =

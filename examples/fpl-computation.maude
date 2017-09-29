@@ -379,7 +379,7 @@ mod PROCESS is
  op nilML : -> MsgList [ctor] .
  op _._ : MsgList MsgList -> MsgList [ctor assoc id: nilML] .
 
- op [_|_,_|_] : Num ENV Exp MsgList -> Process [ctor] .
+ op [_|_|_] : Num Exp MsgList -> Process [ctor] .
 
  op noProc : -> Processes [ctor] .
  op __ : Processes Processes -> Processes [ctor assoc comm id: noProc] .
@@ -389,23 +389,27 @@ mod PROCESS is
  vars nl nl' : MsgList .
  vars n id id' : Num .
  var  ps : Processes .
- vars ro ro' : ENV .
+ var  ro : ENV .
  vars e e' : Exp .
  var  x : Var .
  var  D : Dec .
 
  rl [receive] :
-    [ id | ro, let x = receive in e | n . nl]
- => [ id | ro, let x = n in e | nl] .
+    [ id | let x = receive in e | n . nl]
+ => [ id | let x = n in e | nl] .
 
  rl [send] :
-    | [id | ro, let x = (to id' : n) in e | nl] [id' | ro', e' | nl'] ps , D |
- => | [id | ro, let x = z in e | nl] [id' | ro', e' | nl' . n] ps , D | .
+    | [id | let x = (to id' : n) in e | nl] [id' | e' | nl'] ps , D |
+ => | [id | let x = s(z) in e | nl] [id' | e' | nl' . n] ps , D | .
+
+ rl [auto-send] :
+    | [id | let x = (to id : n) in e | nl] ps , D |
+ => | [id | let x = s(z) in e | nl . n] ps , D | .
 
  crl [advance-process] :
-     | [ id | ro, e  | nl] ps, D |
-  => | [ id | ro, e' | nl] ps, D |
-  if D,ro |- e => e' .
+     | [ id | e  | nl] ps, D |
+  => | [ id | e' | nl] ps, D |
+  if D, mt |- e => e' .
 endm
 
 mod EXAMPLE is
@@ -413,9 +417,9 @@ mod EXAMPLE is
 
  op init : -> System .
 
- eq init = | [z      | mt, FV('server)(s(z), s^2(z)) | nilML]
-             [s(z)   | mt, FV('client)(z)            | nilML]
-             [s^2(z) | mt, FV('client)(z)            | nilML], decs | .
+ eq init = | [z      | FV('server)(s(z), s^2(z)) | nilML]
+             [s(z)   | FV('client)(z)            | nilML]
+             [s^2(z) | FV('client)(z)            | nilML], decs | .
 
  op decs : -> Dec .
  eq decs =
@@ -449,7 +453,7 @@ mod PROPS is
 
  op finalValue : Num Num -> Prop [ctor] .
 
- eq | [id | ro, n | nl] ps, D | |= finalValue(id, n) = true .
+ eq | [id | n | nl] ps, D | |= finalValue(id, n) = true .
  eq s |= finalValue(id, n) = false [owise] .
 endm
 
