@@ -41,7 +41,7 @@ started again as:
 
 where **MOD-NAME** is the name of the module where model checking will take place.
 In both shared-memory and message-passing style we need to define the sort in charge
-of processes. The command **unit**
+of processes. The command **unit** is used as follows:
 
     Maude> (unit SORT .)
 
