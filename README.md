@@ -20,4 +20,4 @@ Using the tool
 
 MCPS is started by
 
-## Model checking programs following a shared-memory approach
+### Model checking programs following a shared-memory approach
