@@ -51,9 +51,9 @@ the following command to introduce it:
 
     Maude> (unit SORT id N .)
 
-### Model checking programs following a shared-memory approach
+### Shared-memory semantics
 
-This kind of model checking also requires the user to introduce the sort(s) for
+This kind of model checking requires the user to introduce the sort(s) for
 specifying the memory as:
 
     Maude> (memory sorts SORT_1 ... SORT_n .)
@@ -80,7 +80,8 @@ memory can be used.
 * Since we can work at the metalevel, we decided to display the value of all atomic formulas
 before and after applying the rule, so the user can understand the values taken by the LTL
 formula (field **props**). For each atomic proposition in the formula we display its name,
-arguments, and how its value changed when the current rule is applied.
+arguments, and how its value changed when the current rule is applied. Hence, steps in this
+case have the form:
 
 
 ```
@@ -92,19 +93,93 @@ arguments, and how its value changed when the current rule is applied.
   props  = [{name_1 = ...,
              args_1 = [...],
              prop_1 = ... -> ...},
-            ...
+            ...,
             {name_n = ...,
              args_n = [...],
              prop_n = ... -> ...}]
-} ...
+}
 ```
 
-### Model checking programs following a shared-memory approach
+### Message-passing semantics
 
+When model checking programs following message-passing semantics, the user must
+introduce the operators for creating and consuming messages as follows:
 
+    Maude> (msg creation OP_1 ... OP_n .)
+    Maude> (msg consumption OP_1 ... OP_n .)
 
+We can also set the kind of trace we want to obtain. MCPS allows users to select
+a summary of the computation with the **process** mode (which is selected by default)
+and a trace-like approach with the **trace** mode.  Modes are switched with the commands:
 
+    Maude> (set mode process .)
+    Maude> (set mode trace .)
 
+The **process** mode displays:
+* Its identifier (**id** field).
+
+* Its final value (**value** field). Note that in some cases this value will not be a normal
+form, since some functions (e.g. servers) might be non-terminating.
+
+*
+The list of messages it has sent (**sent** field).
+
+* The list of messages it has consumed (**consumed** field).
+
+Hence, the result of this analysis has the form:
+
+```
+{processes =[
+  {   id_1 = ...,
+      value_1 = ...,
+      sent_1 = [...],
+      consumed_1 = [...]},
+  ...,
+  {   id_n = ...,
+      value_n = ...,
+      sent_n = [...],
+      consumed_n = [...]}
+```
+
+On the other hand, the **trace** mode displays:
+* The identifier of the process that performed the action (**id** field).
+
+* The action that took place (**action** field), which can be either
+**msg-consumed**, **msg-sent**, and **prop-changed**, which stand for messages consumed,
+messages sent, and truth value of atomic propositions changed, respectively.
+
+* The messages involved in the action (**messages** field). This field is omitted
+when the action is not referred to message creation or consumption.
+
+* The state of all processes before and after applying the rule, so changes
+can be easily analyzed (**processes-before** and **processes-after** fields,
+respectively).
+
+* How the properties changed with the rewrite rule (**props** field), which are
+displayed as explained above for shared memory.
+
+Hence, one step of this analysis has the form:
+
+```
+{id = ...,
+ action = ...,
+ messages = [...],
+ processes-before = [...],
+ processes-after = [...],
+ props  = [{name_1 = ...,
+            args_1 = [...],
+            prop_1 = ... -> ...},
+           ...,
+           {name_n = ...,
+            args_n = [...],
+            prop_n = ... -> ...}]
+}
+```
+
+Once this information has been introduced we use the following command for model
+checking:
+
+    Maude> (msg passing analysis modelCheck(INIT, FORMULA) .)
 
 
 
