@@ -1,7 +1,7 @@
 fmod MODE is
  sort Mode .
 
- ops process trace : -> Mode [ctor] .
+ ops summary trace : -> Mode [ctor] .
 endfm
 
 fmod PRINT is
@@ -43,7 +43,7 @@ fmod PRINT is
                                 '\! 'argument. '\o '\n .
 
  op print-mode : Mode -> QidList .
- eq print-mode(process) = '\n '\b '\! 'Mode '\o 'process '\b '\! 'selected. '\o '\n .
+ eq print-mode(summary) = '\n '\b '\! 'Mode '\o 'summary '\b '\! 'selected. '\o '\n .
  eq print-mode(trace) = '\n '\b '\! 'Mode '\o 'trace '\b '\! 'selected. '\o '\n .
 
  ops comm-error-msg error-term-mc error-no-counter error-no-terms : -> QidList .

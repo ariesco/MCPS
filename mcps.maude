@@ -56,7 +56,7 @@ fmod MCPS-SIGNATURE is
   *** Sets "process" as the current mode.                                       ***
   *** Usage: (set mode process .)                                               ***
   *********************************************************************************
-  op set`mode`process`. : -> @MCPSCommand@ [ctor] .
+  op set`mode`summary`. : -> @MCPSCommand@ [ctor] .
 
   *********************************************************************************
   *** Sets "trace" as the current mode.                                         ***
@@ -84,7 +84,7 @@ fmod MCPS-COMMAND-PROCESSING is
  *** The second one contains either a JSON or an error message.
  op [_,_] : Bool QidList -> AnalysisResult [ctor] .
 
- *** Sorts used to store the information for the "process" mode for message passing languages
+ *** Sorts used to store the information for the "summary" mode for message passing languages
  sort ProcessInfo CompInfo .
  subsort ProcessInfo < CompInfo .
  *** Id
@@ -248,7 +248,7 @@ fmod MCPS-COMMAND-PROCESSING is
 
  op processMPAMode : Module TermList QidSet QidSet Qid Nat Mode TermList QidSet QidSet ->
                      AnalysisResult .
- ceq processMPAMode(M, TL, QS, QS', Q, N, process, PROPS, RC, RD) = [true, QIL]
+ ceq processMPAMode(M, TL, QS, QS', Q, N, summary, PROPS, RC, RD) = [true, QIL]
   if QIL := processCounterProc(M, TL, QS, QS', Q, N, RC, RD, noInfo) .
  *** We need to start with a dummy TraceInfo, so the set is built on top of noInfo.
  *** This dummy element is removed in the base case of processCounterTrace
@@ -300,7 +300,7 @@ fmod MCPS-COMMAND-PROCESSING is
  sort TraceInfo TraceInfoList .
  subsort TraceInfo < TraceInfoList .
  *** Id
- *** Action (either 'msg-created or 'msg-consumed)
+ *** Action ('msg-created, 'msg-consumed, or 'prop-changed)
  *** Msgs
  *** Current state
  *** Next state
@@ -349,7 +349,7 @@ fmod MCPS-COMMAND-PROCESSING is
 
  **********************************************************************************
  *** Auxiliary function: processCounterProc                                     ***
- *** Computes the JSON for message-passing semantics with "process" mode.       ***
+ *** Computes the JSON for message-passing semantics with "summary" mode.       ***
  **********************************************************************************
 
  op processCounterProc : Module TermList QidSet QidSet Qid Nat QidSet QidSet CompInfo ->
@@ -433,7 +433,7 @@ fmod MCPS-COMMAND-PROCESSING is
  **********************************************************************************
  *** Auxiliary function: getProcInfoSend                                        ***
  *** Computes the changes produced when sending a message.                      ***
- *** It is computed for the "process" mode.                                     ***
+ *** It is computed for the "summary" mode.                                     ***
  *** 1st argument: Module were the rewrites take place.                         ***
  *** 2nd argument: Term being rewritten.                                        ***
  *** 3rd argument: Reached term (next term in the counterexample).              ***
@@ -457,7 +457,7 @@ fmod MCPS-COMMAND-PROCESSING is
  **********************************************************************************
  *** Auxiliary function: getProcInfoReceive                                     ***
  *** Computes the changes produced when consuming a message.                    ***
- *** It is computed for the "process" mode.                                     ***
+ *** It is computed for the "summary" mode.                                     ***
  *** 1st argument: Module were the rewrites take place.                         ***
  *** 2nd argument: Term being rewritten.                                        ***
  *** 3rd argument: Reached term (next term in the counterexample).              ***
@@ -850,14 +850,14 @@ mod MCPS is
  op mode :_ : Mode -> Attribute [ctor] .
 
  *********************************************************************************
- *** Rule for setting the current mode to "process" for message-passing        ***
+ *** Rule for setting the current mode to "summary" for message-passing        ***
  *** semantics.                                                                ***
  *********************************************************************************
- rl [mode-process] :
-    < O : MCPSDC | input : ('set`mode`process`..@MCPSCommand@), output : nil,
+ rl [mode-summary] :
+    < O : MCPSDC | input : ('set`mode`summary`..@MCPSCommand@), output : nil,
                    mode : M, AtS >
- => < O : MCPSDC | input : nilTermList, output : print-mode(process),
-                   mode : process, AtS >  .
+ => < O : MCPSDC | input : nilTermList, output : print-mode(summary),
+                   mode : summary, AtS >  .
 
  *********************************************************************************
  *** Rule for setting the current mode to "trace" for message-passing          ***
@@ -1006,7 +1006,7 @@ mod MCPS-INIT is
  op init-state : -> AttributeSet .
  eq init-state = db : initialDatabase, default : 'CONVERSION, memory : none,
                  unit : 'Bool, unit-id : 0, msg-creation : none, msg-consumption : none,
-                 mode : process .
+                 mode : summary .
 
  rl [init] :
     init-mcps
